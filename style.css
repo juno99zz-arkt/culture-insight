@@ -367,3 +367,111 @@ details.track[open] summary{margin-bottom:8px}
 .low-issue li{display:grid;grid-template-columns:96px 1fr;gap:6px;font-size:12.5px;color:var(--sub);line-height:1.5}
 .low-issue .ev-k{font-size:12px}
 .trend{display:block}
+.low-leader{font-size:12.5px;color:var(--sub);margin:2px 0 1px}
+
+/* ---------- 인쇄 옵션 창 ---------- */
+.modal{position:fixed;inset:0;background:rgba(20,26,40,.45);display:grid;place-items:center;z-index:50;padding:16px}
+.modal-card{background:var(--surface);border-radius:14px;width:100%;max-width:520px;padding:22px 24px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.modal-card h3{font-size:18px;margin-bottom:6px}
+.pr-opts{display:grid;gap:8px}
+.pr-opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.pr-opt:hover{border-color:#c9cedb}
+.pr-opt input{margin-top:3px;accent-color:var(--accent)}
+.pr-opt b{display:block;font-size:14px}
+.pr-opt small{display:block;color:var(--muted);font-size:12px;margin-top:1px}
+.pr-opt-row{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.pr-opt-row .chk{margin-left:auto;display:flex;gap:6px;align-items:center;font-size:13px}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+#printArea{display:none}
+
+/* ---------- A4 결과 리포트 ---------- */
+@media print{
+  @page{size:A4 portrait;margin:13mm 12mm 14mm}
+  body.printing #app,body.printing #lock,body.printing #modal{display:none!important}
+  body.printing #printArea{display:block}
+  html,body{background:#fff!important}
+  .print-doc{font-size:11px;line-height:1.5;color:#1c2430;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .print-doc details.dist>summary,.print-doc .btn,.print-doc .actions,.print-doc .filters,.print-doc .pager,.print-doc details.track,.print-doc .ins-more,.print-doc .spin,.print-doc details.more>summary{display:none!important}
+  .print-doc .card{border:1px solid #dfe3ea;border-radius:8px;padding:10px 12px;break-inside:auto}
+  .print-doc .mt{margin-top:10px}
+  .print-doc .grid{gap:10px}
+  .print-doc .card h3{font-size:13px;margin-bottom:8px}
+  .print-doc .kpi .label{font-size:12px}
+  .print-doc .kpi .value{font-size:22px}
+  .print-doc .kpi,.print-doc .ins-card,.print-doc .keep-item,.print-doc .prop,.print-doc .pair,.print-doc .op,.print-doc .list-item,.print-doc .bar-row,.print-doc tr,.print-doc .brief-sec,.print-doc .g-chart>.card,.print-doc .notice,.print-doc .seg-summary{break-inside:avoid}
+  .print-doc h2,.print-doc h3,.print-doc h4,.print-doc .sub-h{break-after:avoid}
+  .print-doc .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .print-doc .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .print-doc .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .print-doc .g-chart{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .print-doc .g-chart>.card:nth-child(2){grid-column:1/-1;order:3}
+  .print-doc .brief-grid{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px}
+  .print-doc .ins-grid{grid-template-columns:minmax(0,1fr);gap:8px}
+  .print-doc .ins-card{padding:10px 12px}
+  .print-doc .ins-card h4{font-size:12.5px;margin-bottom:4px}
+  .print-doc .ins-sec p,.print-doc .ins-card blockquote,.print-doc .keep-item p,.print-doc .prop p,.print-doc .ev{font-size:10.5px}
+  .print-doc .col-plot{height:130px}
+  .print-doc .cols{margin-top:16px}
+  .print-doc .tbl{font-size:10px}
+  .print-doc .tbl th,.print-doc .tbl td{padding:5px 6px}
+  .print-doc .tbl-wrap{overflow:visible}
+  .print-doc thead{display:table-header-group}
+  .print-doc .scope{font-size:9px;line-height:15px}
+  .print-doc .notice{padding:7px 10px;font-size:10.5px;margin-bottom:8px}
+  .print-doc .src{font-size:9.5px}
+  .print-doc .prop{grid-template-columns:24px 1fr;gap:10px;padding:10px 0}
+  .print-doc .prop .no{width:22px;height:22px;font-size:11px}
+  .print-doc .prop h4{font-size:13px}
+  .print-doc .ev{padding:6px 8px}
+  .print-doc .ev li{grid-template-columns:110px 1fr}
+  .print-doc .lead-top{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}
+  .print-doc .seg-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+  .print-doc .cat-bars .bar-row{grid-template-columns:120px 1fr 90px}
+  .print-doc .bar-row{grid-template-columns:100px 1fr 80px}
+  .print-doc details.more{border-top:0;padding-top:4px;margin-top:8px}
+  .pr-break{break-before:page}
+  .pr-sec-h{display:flex;align-items:baseline;gap:10px;border-bottom:2px solid #1d2433;padding-bottom:6px;margin-bottom:12px}
+  .pr-sec-h h2{font-size:18px}
+  .pr-no{font-size:13px;font-weight:800;color:#fff;background:#5561EB;border-radius:6px;padding:1px 7px}
+  .pr-sec-org{margin-left:auto;font-size:10px;color:#8a93a0}
+  .pr-cover{min-height:255mm;display:flex;flex-direction:column}
+  .pr-brand{display:flex;gap:10px;align-items:center;font-weight:700;font-size:14px}
+  .pr-brand small{display:block;font-weight:400;font-size:10px;color:#8a93a0}
+  .pr-brand .brand-mark.sm{width:36px;height:36px;font-size:14px;border-radius:9px}
+  .pr-kicker{margin-top:48mm;font-size:13px;color:#5561EB;font-weight:700;letter-spacing:.04em}
+  .pr-title{font-size:34px;margin:4px 0 18px}
+  .pr-org-name{font-size:24px;font-weight:700}
+  .pr-path{font-size:11px;color:#8a93a0;margin-top:4px}
+  .pr-facts{width:100%;border-collapse:collapse;margin-top:16mm;font-size:11px}
+  .pr-facts th{width:18%;text-align:left;color:#8a93a0;font-weight:500;padding:7px 8px;border-top:1px solid #e7e9ee}
+  .pr-facts td{padding:7px 8px;border-top:1px solid #e7e9ee;font-weight:600}
+  .pr-toc{margin-top:12mm}
+  .pr-toc h2{font-size:13px;margin-bottom:6px}
+  .pr-toc ol{margin:0;padding-left:18px}
+  .pr-toc li{padding:4px 0;border-bottom:1px dotted #d5d9e0}
+  .pr-toc li span{font-weight:700;font-size:12px}
+  .pr-toc li small{display:block;color:#8a93a0;font-size:10px}
+  .pr-note{margin-top:auto;background:#f6f7f9;border-radius:8px;padding:10px 12px;font-size:10px;color:#4b5563}
+  .pr-foot{margin-top:8px;font-size:9.5px;color:#8a93a0;text-align:right}
+  .pr-mini{font-size:10.5px;color:#4b5563;border-bottom:1px solid #e7e9ee;padding-bottom:6px;margin-bottom:10px}
+  .pr-end{margin-top:14px;font-size:9.5px;color:#8a93a0;text-align:center}
+  .print-doc .overview p,.print-doc .seg-summary p{font-size:11.5px;line-height:1.55}
+  .print-doc .seg-summary{padding:8px 10px}
+  .print-doc .seg-n{font-size:20px}
+  .print-doc .sub-h{font-size:11.5px;margin:12px 0 6px}
+  .print-doc .keep-item{padding:8px 10px}
+  .print-doc .keep-item b{font-size:12px}
+  .print-doc .pair-row,.print-doc .op-h,.print-doc .quote,.print-doc .sent-row,.print-doc .list-item{font-size:10.5px}
+  .print-doc .pair-side{padding:7px 9px}
+  .print-doc .ins-k{font-size:10px}
+}
+
+/* 주제별 분포 (제목 아래, 기본 펼침) */
+details.dist{margin:2px 0 12px}
+details.dist>summary{cursor:pointer;color:var(--accent);font-size:12.5px;list-style:none;display:inline-block;margin-bottom:8px}
+details.dist>summary::-webkit-details-marker{display:none}
+details.dist>summary::before{content:'▸ ';color:var(--muted)}
+details.dist[open]>summary::before{content:'▾ '}
+details.dist .when-open{display:none}
+details.dist[open] .when-open{display:inline}
+details.dist[open] .when-closed{display:none}

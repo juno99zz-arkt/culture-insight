@@ -370,11 +370,11 @@ function questionsBody(o) {
 function subTable(o) {
   const rows = o.kids.map(i => O[i]);
   if (!rows.length) return '<p class="muted">하위조직이 없습니다.</p>';
-  return table(['조직명', '응답인원(명)', '응답률', '종합점수', '전년 대비', '전사 대비', '최저 항목', '자유기술(건)', '부정%', '신호(우선/전체)'], rows.map(x => {
-    if (!ok(x)) return `<tr><td>${orgLabel(x)}</td><td class="num">${x.resp}</td><td colspan="8" class="muted">분석 제한 (응답 ${settings.minN}명 미만 · 비공개)</td></tr>`;
-    const g = gaps(x), wk = g.indexOf(Math.min(...g)), a = agg(x.i);
-    return `<tr class="click" data-org="${x.i}"><td>${orgLabel(x)} ${caution(x) ? tag('표본·응답률 주의', 'mid') : ''}</td><td class="num">${num(x.resp)}</td><td class="num">${pct(x.rate)}</td><td class="num">${f1(x.t[0])}</td><td class="num">${dl(x.t[0] - x.t[1])}</td><td class="num">${sg(x.t[0] - O[0].t[0])}</td><td>${ITEMS[wk]} <span class="down">${sg(g[wk])}</span></td><td class="num">${num(a.n)}</td><td class="num">${a.content ? pct(a.N / a.content) : '-'}</td><td class="num">${a.hi} / ${a.hi + a.mid}</td></tr>`;
-  })) + '<p class="src">자유기술 건수는 문장 수이며 작성자 수가 아닙니다. 부정% 분모는 의견 없음을 제외한 내용 있는 응답입니다.</p>';
+  return table(['조직명', '응답인원(명)', '응답률', '종합점수', '전년 대비', '전사 대비', '최저 항목'], rows.map(x => {
+    if (!ok(x)) return `<tr><td>${orgLabel(x)}</td><td class="num">${x.resp}</td><td colspan="5" class="muted">분석 제한 (응답 ${settings.minN}명 미만 · 비공개)</td></tr>`;
+    const g = gaps(x), wk = g.indexOf(Math.min(...g));
+    return `<tr class="click" data-org="${x.i}"><td>${orgLabel(x)} ${caution(x) ? tag('표본·응답률 주의', 'mid') : ''}</td><td class="num">${num(x.resp)}</td><td class="num">${pct(x.rate)}</td><td class="num">${f1(x.t[0])}</td><td class="num">${dl(x.t[0] - x.t[1])}</td><td class="num">${sg(x.t[0] - O[0].t[0])}</td><td>${ITEMS[wk]} <span class="down">${sg(g[wk])}</span></td></tr>`;
+  }));
 }
 
 // 서술형 분석: 문항 기준으로 분리 (잘하고 있는 점 문항 / 노력해야 할 점 문항). '부서장에게 하고 싶은 말'은 부서장 제언 탭에서 분석
@@ -472,7 +472,12 @@ function segmentSection(o, key) {
   else if (o.i) lines.push('전사와 비교해 언급 비중이 뚜렷하게 높은 경험은 없습니다.');
   const keepCats = catSorted.filter(([c]) => c !== 'C0').slice(0, 2);
   const maxCat = catSorted.length ? catSorted[0][1] : 1;
+  const distOpen = store.get('distOpen', true);
   return `<div class="card seg ${key}">${head}
+    <details class="dist" ${distOpen ? 'open' : ''}><summary><span class="when-open">주제별 분포 숨기기</span><span class="when-closed">주제별 분포 보기</span></summary>
+      <div class="bars cat-bars">${catSorted.map(([c, n]) => bar(catName(c), n, maxCat, { cls: isGood ? 'pos' : 'neg', val: `${num(n)}건 · ${pct(n / focusN)}` })).join('')}</div>
+      <p class="src">${isGood ? '긍정' : '부정·혼합·개선 요청'}으로 분류된 ${num(focusN)}건 기준입니다.</p>
+    </details>
     <div class="seg-summary">${lines.map(x => `<p>${x}</p>`).join('')}
       ${isGood ? '<p class="src">긍정 비중은 ‘잘하고 있는 점’을 묻는 문항 성격의 영향을 받습니다. 조직 전체의 긍정 수준으로 해석하지 마세요.</p>' : ''}</div>
     <div class="sub-h">많이 언급된 경험</div>
@@ -486,10 +491,6 @@ function segmentSection(o, key) {
       return `<div class="keep-item ${key}"><b>${isGood ? '유지할 강점' : '살펴볼 영역'}: ${esc((isGood ? INS.strength : INS.issue)[c] || catName(c))}</b>
         <p>${catName(c)} 주제로 ${isGood ? '긍정적으로 언급한' : '개선을 요구한'} 응답이 ${num(n)}건(분석 대상의 ${pct(n / r.n)}) 있으며, 주로 ${labels.join(', ')} 내용입니다. ${isGood ? '구체적으로 어떤 행동·제도를 긍정적으로 경험했는지 원문을 확인해, 팀에서 유지할 행동 사례로 정리하는 것을 제안합니다.' : '어떤 상황에서 불편이 생기는지 원문과 구성원 대화로 먼저 확인한 뒤 개선 대상을 정하는 것을 제안합니다.'}</p>
         <p class="src">행동 수준의 설명은 분류 요약이 아니라 원문에서 확인해야 합니다.</p></div>`; }).join('')}</div>
-    <details class="more"><summary>주제별 분포 보기</summary>
-      <div class="bars cat-bars">${catSorted.map(([c, n]) => bar(catName(c), n, maxCat, { cls: isGood ? 'pos' : 'neg', val: `${num(n)}건 · ${pct(n / focusN)}` })).join('')}</div>
-      <p class="src">${isGood ? '긍정' : '부정·혼합·개선 요청'}으로 분류된 ${num(focusN)}건 기준입니다.</p>
-    </details>
   </div>`;
 }
 
@@ -851,6 +852,80 @@ function propBody(o, field) {
   <div class="card"><h3>${isHr ? 'HR 제언' : '부서장 제언'} ${scope('sub')}</h3>${cards}</div>`;
 }
 
+/* ---- 결과 리포트 인쇄 (A4) ---- */
+const PRINT_SECS = { sum: '종합 요약', q: '항목 · 문항', txt: '서술형 분석', lead: '부서장 제언', hr: 'HR 제언' };
+const PRINT_DESC = {
+  sum: '핵심 지표, 영역·항목 차트, 강점·약점, 하위조직 결과, 종합 브리핑',
+  q: '12개 항목별 30개 문항 점수와 전사 대비 차이',
+  txt: '핵심 요약, 잘하고 있는 점·개선이 필요한 점 경험 카드, 상반된 경험',
+  lead: "'부서장에게 하고 싶은 말' 분석과 부서장 제언",
+  hr: '진단 점수·자유기술 기반 HR 지원·중장기 과제',
+};
+
+function openPrintDialog() {
+  const o = O[state.org], saved = store.get('printSecs', Object.keys(PRINT_SECS)), cover = store.get('printCover', true);
+  const m = $('#modal');
+  m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="prTitle">
+    <h3 id="prTitle">결과 리포트 인쇄</h3>
+    <p class="muted" style="margin:0 0 12px;font-size:13px">${esc(o.name)} · A4 세로 · 선택한 항목을 순서대로 한 권의 리포트로 구성합니다.</p>
+    <form id="printForm">
+      <div class="pr-opts">${Object.entries(PRINT_SECS).map(([k, l]) => `<label class="pr-opt"><input type="checkbox" name="sec" value="${k}" ${saved.includes(k) ? 'checked' : ''}><span><b>${l}</b><small>${PRINT_DESC[k]}</small></span></label>`).join('')}</div>
+      <div class="pr-opt-row"><button type="button" class="btn sm" data-act="prAll">전체 선택</button><button type="button" class="btn sm" data-act="prNone">선택 해제</button>
+        <label class="chk"><input type="checkbox" name="cover" ${cover ? 'checked' : ''}> 표지·목차 포함</label></div>
+      <p class="src" style="margin:10px 0 0">PDF로 저장하려면 인쇄 창의 대상에서 'PDF로 저장'을 선택하세요. 배경 그래픽 옵션을 켜면 차트 색이 그대로 인쇄됩니다.</p>
+      <p id="prMsg" class="err-msg" style="margin:6px 0 0"></p>
+      <div class="modal-actions"><button type="button" class="btn" data-act="closeModal">취소</button><button class="btn primary">인쇄</button></div>
+    </form></div>`;
+  m.hidden = false;
+  m.querySelector('input[name=sec]').focus();
+}
+const closeModal = () => { const m = $('#modal'); m.hidden = true; m.innerHTML = ''; };
+
+function printReport(o, secs, cover) {
+  const body = {
+    sum: () => summaryBody(o),
+    q: () => questionsBody(o),
+    txt: () => `${textOverview(o)}<div class="grid mt">${segmentSection(o, 'good')}${segmentSection(o, 'improve')}</div>${contrastCard(o)}`,
+    lead: () => propBody(o, 'lead'),
+    hr: () => propBody(o, 'hr'),
+  };
+  const path = []; for (let x = o; x; x = x.parent >= 0 ? O[x.parent] : null) path.unshift(x.name);
+  const list = Object.keys(PRINT_SECS).filter(k => secs.includes(k));
+  const d1 = o.t[0] - o.t[1];
+  const coverHtml = cover ? `<section class="pr-cover">
+      <div class="pr-brand"><span class="brand-mark sm">sci</span><span>Culture Insight<small>조직문화 진단 워크스페이스</small></span></div>
+      <div class="pr-kicker">2026 SCI 조직문화 진단</div>
+      <h1 class="pr-title">결과 리포트</h1>
+      <div class="pr-org-name">${esc(o.name)}</div>
+      <div class="pr-path">${path.map(esc).join(' › ')}</div>
+      <table class="pr-facts"><tbody>
+        <tr><th>조직 단위</th><td>${LV[o.level]}</td><th>진단 연도</th><td>2026</td></tr>
+        <tr><th>대상 인원</th><td>${num(o.target)}명</td><th>응답 인원</th><td>${num(o.resp)}명 (응답률 ${pct(o.rate)})</td></tr>
+        <tr><th>종합점수</th><td>${f1(o.t[0])}점 (전년 대비 ${sg(d1)})</td><th>전사 대비</th><td>${o.i ? `${sg(o.t[0] - O[0].t[0])}점 (전사 ${f1(O[0].t[0])})` : '-'}</td></tr>
+        <tr><th>응답 기준</th><td>${caution(o) ? '표본·응답률 주의' : '응답 기준 충족'}</td><th>출력일</th><td>${now().slice(0, 10)}</td></tr>
+      </tbody></table>
+      <div class="pr-toc"><h2>목차</h2><ol>${list.map(k => `<li><span>${PRINT_SECS[k]}</span><small>${PRINT_DESC[k]}</small></li>`).join('')}</ol></div>
+      <div class="pr-note"><b>읽기 전 참고</b> 점수와 의견은 구성원 인식에 기반한 진단 결과이며, 원인은 검증이 필요한 가설입니다. 자유기술 건수는 문장 수이며 작성자 수가 아닙니다. 응답 ${settings.minN}명 미만 조직은 결과를 공개하지 않았고, 원문은 응답 ${settings.minRaw}명 이상 조직만 비식별 처리해 인용했습니다. 개인 평가 자료로 사용하지 마십시오.</div>
+      <div class="pr-foot">데이터 기준 ${esc(D.meta.built)}</div>
+    </section>` : `<div class="pr-mini"><b>${esc(o.name)}</b> 조직문화 진단 결과 리포트 · 2026 · 응답 ${num(o.resp)}명(${pct(o.rate)}) · 출력 ${now().slice(0, 10)}</div>`;
+  const sections = list.map((k, i) => {
+    const html = body[k]().replace(/<details class="more">/g, '<details class="more" open>').replace(/<details class="dist"\s*>/g, '<details class="dist" open>');
+    return `<section class="pr-sec ${i || cover ? 'pr-break' : ''}">
+      <header class="pr-sec-h"><span class="pr-no">${String(i + 1).padStart(2, '0')}</span><h2>${PRINT_SECS[k]}</h2><span class="pr-sec-org">${esc(o.name)} · 2026 SCI 진단</span></header>
+      ${html}</section>`;
+  }).join('');
+  return coverHtml + sections + `<div class="pr-end">본 리포트는 Culture Insight에서 자동 생성되었습니다 · 데이터 기준 ${esc(D.meta.built)}</div>`;
+}
+
+function runPrint(secs, cover) {
+  const o = O[state.org], area = $('#printArea');
+  area.innerHTML = printReport(o, secs, cover);
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); area.innerHTML = ''; window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(() => window.print(), 60);
+}
+
 /* ---- 저조부서 심층분석 ---- */
 const SIZE_BANDS = [['', '전체 규모'], ['0-9', '10명 미만'], ['10-29', '10~29명'], ['30-99', '30~99명'], ['100-299', '100~299명'], ['300-', '300명 이상']];
 const inBand = (o, band) => { if (!band) return true; const [lo, hi] = band.split('-'); return o.target >= +lo && (hi === '' || o.target <= +hi); };
@@ -913,8 +988,7 @@ function viewLow() {
   const pg = state.page.low || 0, per = 15, pages = Math.max(1, Math.ceil(rows.length / per)), p = Math.min(pg, pages - 1);
   const pageRows = new Set(rows.slice(p * per, p * per + per));
   const rowHtml = x => { const is = lowIssues(x), par = x.parent >= 0 ? O[x.parent].name : '';
-    return `<tr><td class="low-name"><a class="click" data-org="${x.i}" data-go="report">${esc(x.name)}</a><div class="muted" style="font-size:12px">${LV[x.level]} · ${esc(par)}</div><div class="muted" style="font-size:12px">대상 ${num(x.target)}명 · 응답 ${num(x.resp)}명(${pct(x.rate)})</div>${caution(x) ? tag('표본·응답률 주의', 'mid') : ''}</td>
-      <td style="white-space:nowrap">${hide ? '<span class="muted">가림</span>' : esc(x.leader || '-')}</td>
+    return `<tr><td class="low-name"><a class="click" data-org="${x.i}" data-go="report">${esc(x.name)}</a><div class="low-leader">부서장 ${hide ? '<span class="muted">가림</span>' : esc(x.leader || '-')}</div><div class="muted" style="font-size:12px">${LV[x.level]} · ${esc(par)}</div><div class="muted" style="font-size:12px">대상 ${num(x.target)}명 · 응답 ${num(x.resp)}명(${pct(x.rate)})</div>${caution(x) ? tag('표본·응답률 주의', 'mid') : ''}</td>
       <td class="num"><b style="font-size:16px">${f1(x.t[0])}</b></td>
       <td>${trendSvg(x)}<div class="muted" style="font-size:11.5px;white-space:nowrap">${f1(x.t[2])} → ${f1(x.t[1])} → ${f1(x.t[0])}</div><div style="font-size:12px">전년 ${dl(x.t[0] - x.t[1])}</div></td>
       <td class="num"><span class="${x.t[0] - O[0].t[0] >= 0 ? 'up' : 'down'}" style="font-weight:600">${sg(x.t[0] - O[0].t[0])}</span></td>
@@ -922,7 +996,7 @@ function viewLow() {
   let body = '';
   if (!rows.length) body = '<p class="muted">조건에 해당하는 부서가 없습니다. 기준을 조정해 보세요.</p>';
   else body = groups.map(([name, list]) => { const vis = list.filter(x => pageRows.has(x)); if (!vis.length) return '';
-    return `${groups.length > 1 ? `<div class="sub-h">${esc(name)} <small>${list.length}개</small></div>` : ''}${table(['부서명', '부서장', '종합점수', '변화추이 (2024→2026)', '전사 대비', '주요 이슈 및 문제점'], vis.map(rowHtml))}`; }).join('');
+    return `${groups.length > 1 ? `<div class="sub-h">${esc(name)} <small>${list.length}개</small></div>` : ''}${table(['부서명', '종합점수', '변화추이 (2024→2026)', '전사 대비', '주요 이슈 및 문제점'], vis.map(rowHtml))}`; }).join('');
   return pageHead('저조부서 심층분석', `${esc(sc.name)} ${scope('sub')} · 조직 단위·규모별로 점수가 낮은 부서를 골라 주요 이슈를 요약합니다.`,
     `<button class="btn" data-act="exportLow" ${rows.length ? '' : 'disabled'}>목록 CSV</button>`) + `
   <div class="card low-filter">
@@ -1367,7 +1441,9 @@ function bind() {
     const act = e.target.closest('[data-act]');
     if (act) {
       const a = act.dataset.act;
-      if (a === 'print') window.print();
+      if (a === 'print') { if (state.view === 'report') openPrintDialog(); else window.print(); }
+      if (a === 'closeModal') closeModal();
+      if (a === 'prAll' || a === 'prNone') document.querySelectorAll('#printForm input[name=sec]').forEach(x => { x.checked = a === 'prAll'; });
       if (a === 'csv') csvExport();
       if (a === 'cancelEdit') { state.edit = null; render(); }
       if (a === 'regenProps') { const pk = llmPropKey(O[state.org], curTab('report', 'sum')), cache = store.get('llmProps', {}); delete cache[pk]; store.set('llmProps', cache); state.llmErr = null; render(); }
@@ -1392,6 +1468,13 @@ function bind() {
     if (act === 'llm') { store.set('llm', Object.assign(llmCfg(), { on: e.target.checked })); render(); }
   });
   let timer;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+  document.addEventListener('toggle', e => {
+    if (!e.target.matches || !e.target.matches('#view details.dist')) return;
+    store.set('distOpen', e.target.open);
+    document.querySelectorAll('#view details.dist').forEach(d => { if (d.open !== e.target.open) d.open = e.target.open; });
+  }, true);
+  $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
   document.addEventListener('input', e => {
     const f = e.target.tagName === 'INPUT' ? e.target.dataset.f : null;   // 선택 상자는 change 이벤트에서 처리
     if (f) { const [k, key] = f.split(':'); state.f[k][key] = e.target.value; state.page[k] = 0; clearTimeout(timer);
@@ -1401,6 +1484,12 @@ function bind() {
   document.addEventListener('submit', async e => {
     e.preventDefault();
     const fm = e.target, d = new FormData(fm);
+    if (fm.id === 'printForm') {
+      const secs = d.getAll('sec'), cover = d.get('cover') === 'on';
+      if (!secs.length) { $('#prMsg').textContent = '인쇄할 항목을 하나 이상 선택하세요.'; return; }
+      store.set('printSecs', secs); store.set('printCover', cover);
+      closeModal(); runPrint(secs, cover); return;
+    }
     if (fm.id === 'askForm') { const v = $('#askInput').value; $('#askInput').value = ''; ask(v); }
     if (fm.id === 'ovrForm') {
       const ti = +fm.dataset.ti;
