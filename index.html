@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culture Insight · 조직문화 진단 워크스페이스</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 로그인 -->
+<div id="lock" class="lock">
+  <form id="lockForm" class="lock-card" autocomplete="off">
+    <div class="brand-mark">sci</div>
+    <h1>Culture Insight</h1>
+    <p class="muted">조직문화 진단 워크스페이스 · 접근 권한이 있는 사용자만 이용할 수 있습니다.</p>
+    <input id="pw" type="password" inputmode="numeric" placeholder="비밀번호" aria-label="비밀번호">
+    <button type="submit" class="btn primary block">입장</button>
+    <p id="lockMsg" class="lock-msg"></p>
+  </form>
+</div>
+
+<div id="app" class="app" hidden>
+  <aside class="side">
+    <div class="side-brand">
+      <div class="brand-mark sm">sci</div>
+      <div><strong>Culture Insight</strong><span>조직문화 진단 워크스페이스</span></div>
+    </div>
+    <div class="side-label">WORKSPACE</div>
+    <nav id="nav" class="nav"></nav>
+    <div class="side-org">
+      <div class="side-label">조직 선택</div>
+      <input id="orgSearch" class="side-search" placeholder="조직명 검색" aria-label="조직명 검색">
+      <div id="orgTree" class="tree side-tree"></div>
+    </div>
+    <div class="side-foot">
+      <button id="lockBtn" class="side-logout"><span>로그아웃</span><span aria-hidden="true">↗</span></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div id="crumb" class="crumb"></div>
+      <div class="top-right muted" id="topMeta"></div>
+    </header>
+    <section id="view" class="view"></section>
+  </main>
+</div>
+
+<script src="data.enc.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
