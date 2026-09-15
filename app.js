@@ -132,11 +132,6 @@ function risks(o) {
   return r.sort((x, y) => (x[0] === 'high' ? 0 : 1) - (y[0] === 'high' ? 0 : 1));
 }
 
-function statusLine(o) {
-  const d1 = o.t[0] - o.t[1];
-  return `2026 종합점수 ${f1(o.t[0])}점(전년 대비 ${sg(d1)}${o.i ? `, 전사 대비 ${sg(o.t[0] - O[0].t[0])}` : ''}), 응답률 ${pct(o.rate)}(${num(o.resp)}명)입니다.`;
-}
-
 function briefing(o) {
   const a = agg(o.i), g = gaps(o), b = bench(o), d1 = o.t[0] - o.t[1];
   const idx = g.map((_, k) => k).sort((x, y) => g[y] - g[x]);
@@ -193,19 +188,6 @@ function proposals(o) {
     const st = !dq.length ? 'text' : scoreLow && issue ? (split ? 'split' : 'both') : issue ? (worst >= 0 ? 'mixedHigh' : 'mixed') : 'scoreOnly';
     return { c, issue, share, dq, worst, sums, pos: ca.P, kidsIss, st, score: share * 100 + (worst != null ? Math.max(0, -worst) * 3 : 0) };
   }).filter(x => x.issue > 0 || (x.worst != null && x.worst <= -3)).sort((x, y) => y.score - x.score).slice(0, 5);
-}
-
-function priorityIssues(o) {
-  const out = [], a = agg(o.i), b = bench(o), d1 = o.t[0] - o.t[1];
-  if (a.hi) out.push({ w: 100, t: `우선 검토 신호 ${a.hi}건`, e: '괴롭힘·차별 등 표현이 포함된 응답 · HR 검토 필요', s: 'sub', go: 'signal' });
-  if (d1 <= -1.5) out.push({ w: 50 - d1 * 5, t: `종합점수 전년 대비 ${sg(d1)}점`, e: `2025 ${f1(o.t[1])}점 → 2026 ${f1(o.t[0])}점`, s: 'org', go: 'report' });
-  const qg = o.qs.map((v, k) => [k, v - b.qs[k]]).sort((p, q) => p[1] - q[1])[0];
-  if (qg[1] <= -5) out.push({ w: 40 - qg[1] * 2, t: `가장 낮은 문항: ${qShort(qg[0])}`, e: `${f1(o.qs[qg[0]])}점 (${b.label} 대비 ${sg(qg[1])})`, s: 'org', go: 'report' });
-  o.area.forEach((v, k) => { const d = v - o.areaPrev[k]; if (d <= -3) out.push({ w: 35 - d * 3, t: `'${D.areas[k]}' 영역 전년 대비 ${sg(d)}점`, e: `${f1(o.areaPrev[k])} → ${f1(v)}점`, s: 'org', go: 'report' }); });
-  const top = CATS.map(c => [c, a.cat[c].iss]).sort((p, q) => q[1] - p[1])[0];
-  if (top[1] && a.content) out.push({ w: 30 + top[1] / a.content * 100, t: `개선 의견이 가장 많은 주제: ${catName(top[0])}`, e: `${num(top[1])}건 · 내용 있는 응답의 ${pct(top[1] / a.content)}`, s: 'sub', go: 'text' });
-  if (o.rate < 0.7) out.push({ w: 25, t: '응답률 낮음', e: `${pct(o.rate)} · 결과 대표성 주의`, s: 'org', go: 'report' });
-  return out.sort((p, q) => q.w - p.w).slice(0, 3);
 }
 
 /* =========================================================
@@ -267,42 +249,146 @@ const REPORT_TABS = [['sum', '종합 요약'], ['q', '항목 · 문항'], ['txt'
 const TASK_STATUS = ['미착수', '진행 중', '완료', '보류'];
 const taskKey = (o, c) => o.code + '|' + c;
 
+/* ---- 홈: 전사 Overview ---- */
+const BANDS = [
+  { min: 90, label: '90점 이상', name: '우수', color: '#1f9d67' },
+  { min: 85, label: '85~90점', name: '보통', color: '#8b95f2' },
+  { min: 80, label: '80~85점', name: '관심', color: '#f0a44b' },
+  { min: -1, label: '80점 미만', name: '관심 필요', color: '#d9534f' },
+];
+const bandOf = v => BANDS.findIndex(bd => v >= bd.min);
+const bandStack = (list, h = 10) => {
+  const cnt = BANDS.map(() => 0); list.forEach(x => cnt[bandOf(x.t[0])]++);
+  const n = list.length || 1;
+  return `<div class="band-stack" style="height:${h}px">${cnt.map((c, i) => c ? `<i style="width:${c / n * 100}%;background:${BANDS[i].color}" title="${BANDS[i].label} ${c}개"></i>` : '').join('')}</div>`;
+};
+const heat = gap => gap >= 2 ? 'h-good2' : gap >= 0.5 ? 'h-good' : gap > -0.5 ? 'h-mid' : gap > -2 ? 'h-bad' : 'h-bad2';
+function buRisk(x) {
+  const a = agg(x.i), d1 = x.t[0] - x.t[1], dc = x.t[0] - O[0].t[0];
+  if (d1 <= -1.5 || dc <= -2 || a.hi >= 3) return ['red', '주의', [d1 <= -1.5 ? `전년 대비 ${sg(d1)}` : '', dc <= -2 ? `전사 대비 ${sg(dc)}` : '', a.hi >= 3 ? `우선 검토 신호 ${a.hi}건` : ''].filter(Boolean).join(' · ')];
+  if (d1 < 0 || dc < 0) return ['yellow', '관찰', [d1 < 0 ? `전년 대비 ${sg(d1)}` : '', dc < 0 ? `전사 대비 ${sg(dc)}` : ''].filter(Boolean).join(' · ')];
+  return ['green', '양호', '전년 이상 · 전사 이상'];
+}
+
 function viewHome() {
-  const o = O[state.org], co = O[0];
-  if (!ok(o)) return pageHead(`${esc(o.name)} 브리핑`, '홈 브리핑') + limitCard(o);
-  const a = agg(o.i), ca = agg(0), isAll = o.i === 0;
-  const desc = O.slice(o.i + 1, o.end).filter(ok);
-  const drops = desc.map(x => [x, x.t[0] - x.t[1]]).filter(x => x[1] < 0).sort((p, q) => p[1] - q[1]).slice(0, 5);
-  const sigRate = desc.map(x => { const own = ownTexts(x.i); return [x, own.filter(ti => T[ti][4] === 2).length, own.filter(ti => T[ti][4] > 0).length, own.length]; })
-    .filter(x => x[2] > 0 && x[3] >= 20).sort((p, q) => q[1] - p[1] || q[2] / q[3] - p[2] / p[3]).slice(0, 5);
-  const issues = priorityIssues(o), props = leadProposals(o).slice(0, 2), tasks = store.get('tasks', {});
-  const cmp = (v, fmt) => isAll ? '' : `<span class="cmp">전사 ${fmt(v)}</span>`;
+  const co = O[0], ca = agg(0), d1 = co.t[0] - co.t[1];
+  const f = state.f.home || (state.f.home = { lv: '5' });
+  const lv = +f.lv;
+  const units = O.filter(x => x.level === lv && ok(x));
+  const cnt = BANDS.map(() => 0); units.forEach(x => cnt[bandOf(x.t[0])]++);
+  const keep = units.filter(x => x.t[0] - x.t[1] >= 0).length, dropN = units.filter(x => x.t[0] - x.t[1] <= -1.5);
+  const bus = O.filter(x => x.level === 3);
+  const buOf = x => { let y = x; while (y && y.level > 3) y = O[y.parent]; return y && y.level === 3 ? y : null; };
+  const dropBu = {}; dropN.forEach(x => { const b = buOf(x); if (b) dropBu[b.i] = (dropBu[b.i] || 0) + 1; });
+  const topDropBu = Object.entries(dropBu).sort((x, y) => y[1] - x[1])[0];
+  const areaCh = co.area.map((v, k) => [k, v - co.areaPrev[k]]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
+  const itemLow = co.items.map((v, k) => [k, v]).sort((x, y) => x[1] - y[1]).slice(0, 2);
+  const im = segment(co, 'improve'), impPred = segPred('improve');
+  const impCats = {}; Object.values(im.sum).filter(impPred).forEach(v => { if (v.cat !== 'C0') impCats[v.cat] = (impCats[v.cat] || 0) + v.n; });
+  const impFocus = Object.values(im.sum).filter(impPred).reduce((acc, v) => acc + v.n, 0) || 1;
+  const topImp = Object.entries(impCats).sort((x, y) => y[1] - x[1]);
+  const rev = store.get('review', {});
+  const sigTexts = T.map((t, ti) => [t, ti]).filter(([t]) => t[4] > 0);
+  const reviewed = sigTexts.filter(([t, ti]) => ['확인 완료', '해당 없음'].includes(rev[rkey(ti)]?.status)).length;
+
+  // ② 전사 브리핑 (데이터에서 계산한 사실만)
+  const lvName = LV[lv];
+  const brief = [
+    `전사 SCI는 <b>${f1(co.t[0])}점</b>으로 전년(${f1(co.t[1])}점) 대비 <b>${Math.abs(d1).toFixed(1)}점 ${d1 >= 0 ? '상승' : '하락'}</b>했습니다.`,
+    `전체 ${lvName} ${num(units.length)}개 중 <b>${pct(keep / (units.length || 1))}</b>는 전년 수준 이상을 유지했고, ${num(dropN.length)}개(${pct(dropN.length / (units.length || 1))})는 1.5점 이상 하락했습니다.${topDropBu && topDropBu[1] / (dropN.length || 1) >= 0.3 ? ` 하락 ${lvName}의 ${pct(topDropBu[1] / dropN.length)}가 ${esc(O[topDropBu[0]].name)}에 몰려 있습니다.` : ''}`,
+    `영역 중 가장 크게 움직인 것은 <b>'${D.areas[areaCh[0][0]]}'</b>(전년 대비 ${sg(areaCh[0][1])}점)이며, 항목에서는 ${itemLow.map(([k, v]) => `${ITEMS[k]}(${f1(v)})`).join('·')}이 가장 낮습니다.`,
+    topImp.length ? `자유기술 '노력해야 할 점'에서는 <b>${catName(topImp[0][0])}</b>(${pct(topImp[0][1] / impFocus)}), <b>${catName(topImp[1]?.[0] || topImp[0][0])}</b>(${pct((topImp[1]?.[1] || 0) / impFocus)}) 관련 의견이 가장 많았습니다.` : '',
+    `현재 HR 확인이 필요한 <b>우선 검토 신호는 ${num(ca.hi)}건</b>, 일반 검토 신호는 ${num(ca.mid)}건입니다.`,
+  ].filter(Boolean);
+
+  // 전사 Trend
+  const tv = [co.t[2], co.t[1], co.t[0]], tlo = Math.min(...tv) - 1.5, thi = Math.max(...tv) + 1.5;
+  const tx = i => 30 + i * 110, ty = v => 88 - (v - tlo) / (thi - tlo) * 70;
+  const homeTrend = `<svg viewBox="0 0 280 110" class="home-trend" aria-label="전사 SCI 추이">
+    <path d="${tv.map((v, i) => `${i ? 'L' : 'M'}${tx(i)},${ty(v).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${tv.map((v, i) => `<circle cx="${tx(i)}" cy="${ty(v).toFixed(1)}" r="${i === 2 ? 5 : 3.5}" fill="${i === 2 ? 'var(--accent)' : '#fff'}" stroke="var(--accent)" stroke-width="2"/><text x="${tx(i)}" y="${(ty(v) - 10).toFixed(1)}" text-anchor="middle" class="t-val">${f1(v)}</text><text x="${tx(i)}" y="106" text-anchor="middle" class="t-yr">${2024 + i}</text>`).join('')}
+  </svg>`;
+  const areaPrevAvg = mean(co.areaPrev), mismatch = Math.abs(areaPrevAvg - co.t[1]) > 0.5;
+  const maxAbs = Math.max(1, ...co.area.map((v, k) => Math.abs(v - co.areaPrev[k])));
+
+  // 사업부 Heatmap
+  const heatRows = bus.map(x => {
+    if (!ok(x)) return `<tr><td>${esc(x.name)}</td><td colspan="7" class="muted">분석 제한</td></tr>`;
+    const dx = x.t[0] - x.t[1], rk = buRisk(x), kids = O.slice(x.i + 1, x.end).filter(y => y.level === lv && ok(y));
+    return `<tr class="click" data-org="${x.i}" data-go="report">
+      <td class="hm-name">${esc(x.name.replace(/사업부$/, ''))}<span class="muted">사업부</span></td>
+      <td class="hm ${heat(x.t[0] - co.t[0])}"><b>${f1(x.t[0])}</b></td>
+      <td class="hm ${dx >= 0.05 ? 'h-good' : dx <= -1.5 ? 'h-bad2' : dx < -0.05 ? 'h-bad' : 'h-mid'}">${dl(dx)}</td>
+      ${x.area.map((v, k) => `<td class="hm ${heat(v - co.area[k])}">${f1(v)}</td>`).join('')}
+      <td class="hm-dist">${kids.length ? bandStack(kids, 8) + `<span class="muted">${lvName} ${kids.length}개</span>` : '<span class="muted">-</span>'}</td>
+      <td class="hm-risk"><span class="risk-dot ${rk[0]}"></span>${rk[1]}<div class="muted">${esc(rk[2])}</div></td></tr>`;
+  }).join('');
+
+  // ④ 주요 변화
+  const byChange = units.slice().sort((x, y) => (y.t[0] - y.t[1]) - (x.t[0] - x.t[1]));
+  const chRow = x => `<div class="list-item click" data-org="${x.i}" data-go="report"><div class="l"><div>${esc(x.name)}</div><div class="muted" style="font-size:12px">${esc(buOf(x)?.name || '')} · ${f1(x.t[1])} → ${f1(x.t[0])}</div></div><div>${dl(x.t[0] - x.t[1])}</div></div>`;
+
+  // ⑥ Risk: 주제별 신호
+  const catSig = {}; sigTexts.forEach(([t, ti]) => { const c = clsFast(ti)[0]; const e = catSig[c] || (catSig[c] = [0, 0]); e[t[4] === 2 ? 0 : 1]++; });
+  const kwCnt = {}; sigTexts.forEach(([t]) => (t[5] || '').split(',').filter(Boolean).forEach(k => { kwCnt[k] = (kwCnt[k] || 0) + 1; }));
+  const buSig = bus.map(x => [x, agg(x.i).hi]).filter(v => v[1]).sort((x, y) => y[1] - x[1]);
+
+  // ⑦ Action: 전사 HR 과제
+  const acts = proposals(co).slice(0, 3);
+  const Lhr = llmOn() ? store.get('llmProps', {})[llmPropKey(co, 'hr')] : null;
+
+  const unitSel = `<select class="select sm-select" data-f="home:lv">${[4, 5, 6, 7].filter(l => O.some(x => x.level === l)).map(l => `<option value="${l}" ${lv === l ? 'selected' : ''}>${LV[l]} 기준</option>`).join('')}</select>`;
   return `
-  <div class="page-head"><div><h2>${esc(o.name)} 브리핑</h2><p>${LV[o.level]} · 2026 SCI 진단 · 각 영역 오른쪽 위에 집계 범위를 표시합니다.</p></div></div>
-  <div class="grid g4">
-    <div class="card kpi"><div class="label">SCI 종합점수 ${scope('org')}</div><div class="value">${f1(o.t[0])}<small>점</small></div><div class="foot">전년 대비 ${dl(o.t[0] - o.t[1])} ${cmp(co.t[0], f1)}</div></div>
-    <div class="card kpi"><div class="label">응답률 ${scope('org')}</div><div class="value">${pct(o.rate)}</div><div class="foot muted">${num(o.resp)} / ${num(o.target)}명 ${cmp(co.rate, pct)}</div></div>
-    <div class="card kpi"><div class="label">자유기술 ${scope('sub')}</div><div class="value">${num(a.n)}<small>건</small></div><div class="foot muted">문장 수(작성자 수 아님) · 내용 있는 응답 ${num(a.content)}건</div></div>
-    <div class="card kpi"><div class="label">확인 필요 신호 ${scope('sub')}</div><div class="value">${num(a.hi + a.mid)}<small>건</small></div><div class="foot"><span class="down">우선 검토 ${a.hi}</span> <span class="muted">· 일반 검토 ${a.mid}${isAll ? '' : ` · 전사 ${num(ca.hi + ca.mid)}`}</span></div></div>
+  <div class="page-head"><div><h2>2026 전사 조직문화 Overview</h2><p>우리 회사 조직문화에 지금 무슨 일이 일어나고 있는가 · 홈은 항상 전사 기준이며, 조직을 누르면 부서별 결과 리포트로 이동합니다.</p></div></div>
+
+  <div class="grid g5 snap">
+    <div class="card kpi"><div class="label">전사 SCI ${scope('all')}</div><div class="value">${f1(co.t[0])}<small>점</small></div><div class="foot muted">2026 진단</div></div>
+    <div class="card kpi"><div class="label">전년 대비</div><div class="value ${d1 >= 0 ? 'up' : 'down'}">${sg(d1)}<small>점</small></div><div class="foot muted">2025 ${f1(co.t[1])}점</div></div>
+    <div class="card kpi"><div class="label">응답률</div><div class="value">${pct(co.rate)}</div><div class="foot muted">${num(co.resp)} / ${num(co.target)}명</div></div>
+    <div class="card kpi"><div class="label">자유기술</div><div class="value">${num(ca.n)}<small>건</small></div><div class="foot muted">문장 수 · 의견 없음 ${num(ca.none)}건 포함</div></div>
+    <div class="card kpi click" data-go="signal"><div class="label">확인 필요 신호</div><div class="value" style="color:var(--high)">${num(ca.hi)}<small>건 우선</small></div><div class="foot muted">일반 검토 ${num(ca.mid)}건</div></div>
   </div>
+
   <div class="grid g-main mt">
-    <div class="card"><h3>요약 ${scope('org')}</h3>
-      <p class="status-line">${esc(statusLine(o))} ${reliTag(o)}</p>
-      <div class="muted" style="font-size:12px;margin:14px 0 4px">우선 확인할 이슈</div>
-      <div class="list">${issues.map((x, n) => `<div class="list-item click" data-go="${x.go}"><div class="l"><div><b>${n + 1}.</b> ${esc(x.t)}</div><div class="muted" style="font-size:12px">${esc(x.e)}</div></div>${scope(x.s)}</div>`).join('') || '<p class="muted">기준에 해당하는 이슈가 없습니다.</p>'}</div>
-      <details class="more"><summary>상세 브리핑 보기</summary>${briefHtml(o)}</details>
-    </div>
-    <div class="card"><h3>이번 달 검토할 과제 ${scope('sub')}</h3>
-      <div class="list">${props.map(x => { const tk = tasks[taskKey(o, x.c)]; return `<div class="list-item click" data-go="prop" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(store.get('llmProps', {})[llmPropKey(o, 'lead')]?.tasks?.[x.c]?.title || ACT[x.c].t)}</b>${tag(tk?.status || '미착수', tk?.status === '완료' ? 'pos' : tk?.status === '진행 중' ? 'acc' : '')}</div><div class="muted" style="font-size:12px;margin-top:2px">${catName(x.c)} · 구성원 요청 ${num(x.issue)}건${tk?.owner ? ` · 담당 ${esc(tk.owner)}` : ''}</div></div>`; }).join('') || '<p class="muted">근거가 충분한 과제가 없습니다.</p>'}</div>
-      <p class="src">과제 근거와 실행 관리는 부서별 결과 리포트 > 부서장 제언 탭에서 확인합니다.</p>
-    </div>
+    <div class="card home-brief"><h3>2026 전사 조직문화 브리핑 ${scope('all')}</h3>
+      <ol>${brief.map(x => `<li>${x}</li>`).join('')}</ol>
+      <p class="src">자동 생성 요약 · 점수집계표와 자유기술 분류 결과에서 계산한 사실만 사용합니다. 전년 자유기술 데이터가 없어 의견의 증감은 판단하지 않습니다.</p></div>
+    <div class="card"><h3>전사 Trend <small>2024 → 2026</small></h3>${homeTrend}
+      <div class="muted" style="font-size:12px;margin:6px 0 4px">영역별 전년 대비 변화</div>
+      <div class="area-ch">${co.area.map((v, k) => { const dv = v - co.areaPrev[k]; return `<div class="ac-row"><span>${D.areas[k]}</span><div class="ac-bar"><i class="${dv >= 0 ? 'pos' : 'neg'}" style="width:${Math.abs(dv) / maxAbs * 50}%;${dv >= 0 ? 'left:50%' : `right:50%`}"></i></div><b class="${dv >= 0 ? 'up' : 'down'}">${sg(dv)}</b></div>`; }).join('')}</div>
+      ${mismatch ? `<p class="src">참고: 영역 전년 점수 평균(${f1(areaPrevAvg)})과 전년 종합점수(${f1(co.t[1])})가 일치하지 않습니다. 원천 데이터 확인이 필요합니다.</p>` : ''}</div>
   </div>
-  ${desc.length ? `<div class="grid g2 mt">
-    <div class="card"><h3>전년 대비 하락 폭이 큰 하위조직 ${scope('sub')}</h3>
-      <div class="list">${drops.map(([x, d]) => `<div class="list-item click" data-org="${x.i}" data-go="report"><div class="l"><div>${orgLabel(x)}</div><div class="muted" style="font-size:12px">${esc(O[x.parent]?.name || '')} · 응답 ${num(x.resp)}명</div></div><div>${f1(x.t[0])}점 &nbsp;${dl(d)}</div></div>`).join('') || '<p class="muted">전년 대비 하락한 하위조직이 없습니다.</p>'}</div></div>
-    <div class="card"><h3>확인 필요 신호가 있는 하위조직 ${scope('sub')}</h3>
-      <div class="list">${sigRate.map(([x, h, m, n]) => `<div class="list-item click" data-org="${x.i}" data-go="signal"><div class="l"><div>${orgLabel(x)}</div><div class="muted" style="font-size:12px">자유기술 ${n}건 중 ${m}건 (100건당 ${f1(m / n * 100)})</div></div><div>${h ? tag('우선 ' + h, 'high') : ''} ${tag('전체 ' + m, 'mid')}</div></div>`).join('') || '<p class="muted">신호가 있는 하위조직이 없습니다. (자유기술 20건 이상 조직 기준)</p>'}</div></div>
-  </div>` : ''}`;
+
+  <div class="card mt home-dist"><h3>조직 분포 ${scope('all')} <span>${unitSel}</span></h3>
+    <div class="dist-head"><div><div class="muted" style="font-size:12px">전사 SCI</div><div class="dist-score">${f1(co.t[0])}<small>점</small></div></div>
+      <div class="dist-bands">${BANDS.map((bd, i) => `<div><span class="dot" style="background:${bd.color}"></span><b>${pct(cnt[i] / (units.length || 1))}</b><span>${bd.label}</span><small>${num(cnt[i])}개</small></div>`).join('')}</div></div>
+    ${bandStack(units, 16)}
+    <p class="src" style="margin:6px 0 16px">${lvName} ${num(units.length)}개 기준(응답 ${settings.minN}명 이상) · 평균 하나보다 조직 간 편차를 먼저 봅니다.</p>
+    <div class="tbl-wrap"><table class="tbl heatmap"><thead><tr><th>사업부</th><th>2026 SCI</th><th>전년 대비</th>${D.areas.map(ar => `<th>${ar}</th>`).join('')}<th>${lvName} 분포</th><th>Risk</th></tr></thead><tbody>${heatRows}</tbody></table></div>
+    <p class="src">색은 전사 대비 차이(초록: 높음 · 주황: 낮음). Risk — <span class="risk-dot red"></span>주의: 전년 대비 -1.5점 이하, 전사 대비 -2점 이하, 우선 검토 신호 3건 이상 중 하나 · <span class="risk-dot yellow"></span>관찰: 전년 또는 전사보다 낮음 · <span class="risk-dot green"></span>양호. 행을 누르면 상세 리포트로 이동합니다.</p>
+  </div>
+
+  <div class="grid g3 mt">
+    <div class="card"><h3>주요 변화 <small>${lvName} 기준 · 전년 대비</small></h3>
+      <div class="muted" style="font-size:12px">가장 개선된 조직</div><div class="list">${byChange.slice(0, 3).map(chRow).join('')}</div>
+      <div class="muted" style="font-size:12px;margin-top:10px">가장 하락한 조직</div><div class="list">${byChange.slice(-3).reverse().map(chRow).join('')}</div></div>
+    <div class="card"><h3>주요 이슈 <small>전사 '노력해야 할 점'</small></h3>
+      <div class="list">${topImp.slice(0, 4).map(([c, n]) => { const top = Object.entries(im.sum).filter(([, v]) => impPred(v) && v.cat === c).sort((x, y) => y[1].n - x[1].n)[0];
+        return `<div class="list-item" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>${catName(c)}</b><span class="muted">${pct(n / impFocus)} · ${num(n)}건</span></div>${top ? `<div class="sub" style="font-size:12.5px;margin-top:2px">“${esc(expTitle(top[0], 'improve'))}”</div>` : ''}</div>`; }).join('')}</div>
+      <p class="src">구성원 Voice · 부정·혼합·개선 요청 ${num(impFocus)}건 기준</p></div>
+    <div class="card click" data-go="signal"><h3>Risk Signal <small>확인 필요 신호</small></h3>
+      <div class="risk-kpi"><div><b style="color:var(--high)">${num(ca.hi)}</b><span>우선 검토</span></div><div><b style="color:var(--mid)">${num(ca.mid)}</b><span>일반 검토</span></div><div><b>${sigTexts.length ? pct(reviewed / sigTexts.length) : '-'}</b><span>검토 완료</span></div></div>
+      <div class="list" style="margin-top:8px">${Object.entries(catSig).sort((x, y) => (y[1][0] * 3 + y[1][1]) - (x[1][0] * 3 + x[1][1])).slice(0, 3).map(([c, [h, m]]) => `<div class="list-item"><span>${catName(c)}</span><span>${h ? tag('우선 ' + h, 'high') : ''} ${tag('일반 ' + m, 'mid')}</span></div>`).join('')}</div>
+      <div class="muted" style="font-size:12px;margin-top:8px">주요 표현: ${Object.entries(kwCnt).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, n]) => `‘${esc(k)}’ ${n}`).join(' · ') || '-'}</div>
+      ${buSig.length ? `<div class="muted" style="font-size:12px;margin-top:2px">우선 검토가 있는 사업부: ${buSig.map(([x, n]) => `${esc(x.name)} ${n}건`).join(', ')}</div>` : ''}
+      <p class="src">사실 판단 전 단계입니다. 누르면 조직문화 저해 사례로 이동합니다.</p></div>
+  </div>
+
+  <div class="card mt"><h3>이번 달 HR 검토 핵심과제 ${scope('all')} <small>전사 진단 점수·자유기술 기반 · 검토용 제안</small></h3>
+    <div class="grid g3">${acts.map((x, n) => { const lt = Lhr?.tasks?.[x.c]; return `<div class="action-card click" data-org="0" data-go="report" data-tabset="report:hr">
+      <div class="action-no">${n + 1}</div><h4>${esc(lt?.title || ACT[x.c].t)}</h4><p>${esc((lt && lt.hr) || ACT[x.c].hr)}</p>
+      <div class="chips">${tag(catName(x.c), 'acc')}${tag(`개선 의견 ${num(x.issue)}건`)}${x.dq.length ? tag(`관련 문항 최저 ${sg(x.worst)}`) : ''}</div></div>`; }).join('')}</div>
+    <p class="src">근거와 중장기 과제는 부서별 결과 리포트(전사) > HR 제언 탭에서 확인합니다.</p></div>`;
 }
 
 function viewReport() {
@@ -1362,7 +1448,7 @@ function render() {
   $('#nav').innerHTML = VIEWS.map(([k, l, ic]) => `${k === 'settings' ? '<div class="sep"></div>' : ''}<button data-go="${k}" class="${state.view === k ? 'on' : ''}"><span class="ico">${ic}</span>${l}</button>`).join('');
   const path = []; for (let x = o; x; x = x.parent >= 0 ? O[x.parent] : null) path.unshift(x);
   const shown = path.length > 3 ? [path[0], null, ...path.slice(-2)] : path;
-  $('#crumb').innerHTML = shown.map((x, n) => x === null ? '<span>…</span><span>›</span>' : n === shown.length - 1 ? `<b>${esc(x.name)}</b>` : `<span>${esc(x.name)}</span><span>›</span>`).join('');
+  $('#crumb').innerHTML = state.view === 'home' ? `<b>${esc(O[0].name)}</b><span>·</span><span>전사 기준</span>` : shown.map((x, n) => x === null ? '<span>…</span><span>›</span>' : n === shown.length - 1 ? `<b>${esc(x.name)}</b>` : `<span>${esc(x.name)}</span><span>›</span>`).join('');
   $('#topMeta').textContent = `${VIEWS.find(v => v[0] === state.view)[1]} · 데이터 기준 ${D.meta.built}`;
   const fn = { home: viewHome, report: viewReport, low: viewLow, signal: viewSignal, ask: viewAsk, settings: viewSettings }[state.view] || viewHome;
   $('#view').innerHTML = fn();
@@ -1423,7 +1509,7 @@ function exportAction(a) {
 function bind() {
   document.addEventListener('click', e => {
     // 왼쪽 조직 트리: 현재 화면을 유지한 채 조직만 변경
-    if (e.target.closest('#orgTree [data-org]') && !e.target.closest('[data-toggle]')) { selectOrg(e.target.closest('[data-org]').dataset.org); return; }
+    if (e.target.closest('#orgTree [data-org]') && !e.target.closest('[data-toggle]')) { if (state.view === 'home') setView('report'); selectOrg(e.target.closest('[data-org]').dataset.org); return; }
     const tg = e.target.closest('[data-toggle]');
     if (tg) { const i = +tg.dataset.toggle; state.expanded.has(i) ? state.expanded.delete(i) : state.expanded.add(i); store.set('expanded', [...state.expanded]); renderTree(); return; }
     if (e.target.closest('form, summary, details .inline-form')) { if (!e.target.closest('[data-act]')) return; }
