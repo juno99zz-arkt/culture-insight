@@ -333,6 +333,8 @@ function viewHome() {
   const kwCnt = {}; sigTexts.forEach(([t]) => (t[5] || '').split(',').filter(Boolean).forEach(k => { kwCnt[k] = (kwCnt[k] || 0) + 1; }));
   const buSig = bus.map(x => [x, agg(x.i).hi]).filter(v => v[1]).sort((x, y) => y[1] - x[1]);
 
+  const vt = voiceThemes(co), voe = voiceQuotes(co, 1).bad[0];
+
   // ⑦ Action: 전사 HR 과제
   const acts = proposals(co).slice(0, 3);
   const Lhr = llmOn() ? store.get('llmProps', {})[llmPropKey(co, 'hr')] : null;
@@ -372,10 +374,11 @@ function viewHome() {
     <div class="card"><h3>주요 변화 <small>${lvName} 기준 · 전년 대비</small></h3>
       <div class="muted" style="font-size:12px">가장 개선된 조직</div><div class="list">${byChange.slice(0, 3).map(chRow).join('')}</div>
       <div class="muted" style="font-size:12px;margin-top:10px">가장 하락한 조직</div><div class="list">${byChange.slice(-3).reverse().map(chRow).join('')}</div></div>
-    <div class="card"><h3>주요 이슈 <small>전사 '노력해야 할 점'</small></h3>
-      <div class="list">${topImp.slice(0, 4).map(([c, n]) => { const top = Object.entries(im.sum).filter(([, v]) => impPred(v) && v.cat === c).sort((x, y) => y[1].n - x[1].n)[0];
-        return `<div class="list-item" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>${catName(c)}</b><span class="muted">${pct(n / impFocus)} · ${num(n)}건</span></div>${top ? `<div class="sub" style="font-size:12.5px;margin-top:2px">“${esc(expTitle(top[0], 'improve'))}”</div>` : ''}</div>`; }).join('')}</div>
-      <p class="src">구성원 Voice · 부정·혼합·개선 요청 ${num(impFocus)}건 기준</p></div>
+    <div class="card home-voice click" data-org="0" data-go="report" data-tabset="report:txt"><h3>💬 구성원이 가장 많이 이야기한 것 <small>전사 자유기술</small></h3>
+      <div class="list">${vt.bad.map((x, i) => `<div class="list-item" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>${BADGE[i ? 1 : 0]} ${catName(x.cat)}</b><span class="muted">${pct(x.share)} · ${num(x.n)}건</span></div><div class="sub" style="font-size:12.5px;margin-top:2px">${esc(expTitle(x.label, 'improve'))}</div></div>`).join('')}
+        ${vt.good ? `<div class="list-item" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>${BADGE[2]} ${catName(vt.good.cat)}</b><span class="muted">가장 일관된 강점</span></div><div class="sub" style="font-size:12.5px;margin-top:2px">${esc(expTitle(vt.good.label, 'good'))}</div></div>` : ''}</div>
+      ${voe ? `<figure class="voe"><blockquote>${esc(voe.q || voiceQuote(voe.ti))}</blockquote><figcaption>Voice of Employee · ${esc(D.qtypes[voe.t[1]])}</figcaption></figure>` : ''}
+      <p class="src">자유기술 전체 분석 →</p></div>
     <div class="card click" data-go="signal"><h3>Risk Signal <small>확인 필요 신호</small></h3>
       <div class="risk-kpi"><div><b style="color:var(--high)">${num(ca.hi)}</b><span>우선 검토</span></div><div><b style="color:var(--mid)">${num(ca.mid)}</b><span>일반 검토</span></div><div><b>${sigTexts.length ? pct(reviewed / sigTexts.length) : '-'}</b><span>검토 완료</span></div></div>
       <div class="list" style="margin-top:8px">${Object.entries(catSig).sort((x, y) => (y[1][0] * 3 + y[1][1]) - (x[1][0] * 3 + x[1][1])).slice(0, 3).map(([c, [h, m]]) => `<div class="list-item"><span>${catName(c)}</span><span>${h ? tag('우선 ' + h, 'high') : ''} ${tag('일반 ' + m, 'mid')}</span></div>`).join('')}</div>
@@ -521,6 +524,122 @@ function contrasts(o) {
   return out.sort((x, y) => y.w - x.w);
 }
 
+// ---- 구성원 Voice: 결론 → 근거 → 원문 → 상세 ----
+const STRONG_RE = /폭언|욕설|막말|모욕|인격|괴롭|협박|갑질|차별|고성|소리|눈치|두렵|지옥|번아웃|힘듭|참을|막막|무시/;
+const clip = (t, max) => t.length > max ? t.slice(0, max).replace(/[\s,·]+$/, '') + '…' : t;
+const tidy = x => String(x).replace(/[\u200b\u200c\uFEFF]/g, '').replace(/^[\s\-–—*>·●■◆\d.)\]]+/, '')
+  .replace(/^(또한|그리고|그래서|그런데|하지만|다만|특히|아울러|더불어|그러나)[,\s]*/, '').trim();
+function keySentence(raw, kws) {
+  const parts = String(raw).split(/\n+|(?<=[.!?])\s+/).map(tidy)
+    .filter(x => x.length >= 20 && !/^[(\[].*[)\]]$/.test(x));
+  if (!parts.length) return tidy(String(raw)).slice(0, 160);
+  const ks = (kws || '').split(',').filter(Boolean);
+  const sc = x => (ks.some(k => x.includes(k)) ? 3 : 0) + (STRONG_RE.test(x) ? 2 : 0)
+    + (x.length >= 30 && x.length <= 110 ? 2 : 0) + (/(다|요|까|죠|음|함)[.?!]?$/.test(x) ? 1 : 0);
+  return parts.slice().sort((a, b) => sc(b) - sc(a) || a.length - b.length)[0];
+}
+const voiceQuote = ti => clip(deid(keySentence(T[ti][3], T[ti][5])), 120);
+
+function voiceThemes(o) {
+  const im = segment(o, 'improve'), g = segment(o, 'good'), pred = segPred('improve');
+  const co = o.i === 0 ? im : segment(O[0], 'improve');
+  const roll = (r, ok2) => { const m = {}; let tot = 0;
+    Object.entries(r.sum).forEach(([l, v]) => { if (!ok2(v) || v.cat === 'C0') return; const e = m[v.cat] || (m[v.cat] = { n: 0, labels: [] }); e.n += v.n; e.labels.push([l, v]); tot += v.n; });
+    return [m, tot || 1]; };
+  const [m, tot] = roll(im, pred), [cm, ctot] = roll(co, pred), [gm, gtot] = roll(g, v => v.sent === '긍정');
+  const pick = (map, total, key) => Object.entries(map).sort((x, y) => y[1].n - x[1].n).map(([c, e]) => {
+    e.labels.sort((x, y) => y[1].n - x[1].n);
+    return { cat: c, n: e.n, share: e.n / total, label: e.labels[0][0], sm: e.labels[0][1], key,
+             cshare: key === 'improve' ? (cm[c] ? cm[c].n / ctot : 0) : null };
+  });
+  const bad = pick(m, tot, 'improve').slice(0, 3), badCats = new Set(bad.map(x => x.cat));
+  const gl = pick(gm, gtot, 'good');
+  return { bad, good: gl.find(x => !badCats.has(x.cat)) || gl[0] || null, im, g, tot, gtot };
+}
+
+function voiceQuotes(o, n) {
+  const seen = new Set(), out = [];
+  const list = textsIn(o.i).filter(ti => TEXT_QS.includes(T[ti][1]) && rawOk(O[T[ti][0]]))
+    .map(ti => ({ ti, t: T[ti], c: clsFast(ti) })).filter(x => x.c[2] !== '의견 없음' && String(x.t[3]).length >= 25);
+  const score = x => x.t[4] * 10 + (STRONG_RE.test(x.t[3]) ? 4 : 0) + (x.c[1] === '부정' ? 2 : 0);
+  list.forEach(x => { x.q = voiceQuote(x.ti); });
+  const good = list.filter(x => x.q.length >= 30);
+  good.sort((a, b) => score(b) - score(a) || b.q.length - a.q.length);
+  for (const x of good) { if (seen.has(x.c[3])) continue; seen.add(x.c[3]); out.push(x); if (out.length >= (n || 2)) break; }
+  const gs = good.filter(x => x.c[1] === '긍정' && x.t[1] === 0).sort((a, b) => b.q.length - a.q.length)[0];
+  return { bad: out, good: gs || null };
+}
+
+const jong = w => { const c = String(w).charCodeAt(String(w).length - 1); return c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 !== 0; };
+const josa = (w, a, b) => w + (jong(w) ? a : b);   // 조사 자동 선택 (은/는, 이/가)
+const BADGE = ['🔴', '🟠', '🟢'];
+function voiceSnapCard(o) {
+  const v = voiceThemes(o);
+  if (!v.bad.length && !v.good) return `<div class="card"><h3>한눈에 보기</h3><p class="muted">분석할 자유기술 응답이 없습니다.</p></div>`;
+  const chips = v.bad.map((x, i) => `<span class="v-chip ${i ? 'mid' : 'high'}">${BADGE[i ? 1 : 0]} ${esc(catName(x.cat))}<small>${pct(x.share)}</small></span>`).join('')
+    + (v.good ? `<span class="v-chip good">${BADGE[2]} ${esc(catName(v.good.cat))}<small>강점</small></span>` : '');
+  const t0 = v.bad[0];
+  const gapTxt = t0 && o.i !== 0 && Math.abs(t0.share - t0.cshare) >= 0.02 ? ` 전사(${pct(t0.cshare)})보다 ${(Math.abs(t0.share - t0.cshare) * 100).toFixed(0)}%p ${t0.share > t0.cshare ? '높습니다' : '낮습니다'}.` : '';
+  const bn = t0 ? catName(t0.cat) : '', gn = v.good ? catName(v.good.cat) : '';
+  const line = t0 ? `구성원이 개선을 요구한 의견 ${num(v.tot)}건 중 <b>${esc(bn)}</b>${jong(bn) ? '이' : '가'} ${pct(t0.share)}로 가장 많습니다.${gapTxt}${v.good ? ` 반대로 <b>${esc(gn)}</b>${jong(gn) ? '은' : '는'} 긍정 응답의 ${pct(v.good.share)}를 차지하는 강점입니다.` : ''}` : '';
+  return `<div class="card voice-snap"><h3>01. 한눈에 보기 ${scope('sub')} <small>구성원 Voice를 분석한 결과</small></h3>
+    <div class="v-chips">${chips}</div>
+    <p class="v-line">${line}</p>
+    <p class="src">🔴 가장 많이 언급 · 🟠 함께 살펴볼 주제 · 🟢 강점 · ‘잘하고 있는 점’·‘노력해야 할 점’ 문항 ${num(v.g.n + v.im.n)}건 기준(의견 없음 제외, 문장 수). 전년 자유기술이 없어 증감은 판단하지 않습니다.</p></div>`;
+}
+
+function voiceInsightCard(o) {
+  const v = voiceThemes(o);
+  if (!v.bad.length) return '';
+  const cards = v.bad.map((x, i) => {
+    const cand = (x.sm.ex || []).map(([ti]) => voiceQuote(ti)).filter(t => t.length >= 25);
+    const q = cand.sort((a, b) => (STRONG_RE.test(b) - STRONG_RE.test(a)) || b.length - a.length)[0] || '';
+    const gap = o.i !== 0 ? x.share - x.cshare : null;
+    return `<div class="v-ins">
+      <div class="v-ins-h"><span class="v-no">${i + 1}</span><span class="v-cat">${esc(catName(x.cat))}</span></div>
+      <h4>${esc(expTitle(x.label, 'improve'))}</h4>
+      <div class="v-num"><b>${num(x.n)}건</b><span>개선 의견의 ${pct(x.share)}</span>${gap == null ? '' : `<span class="${gap > 0 ? 'up' : 'down'}">전사 대비 ${(gap > 0 ? '+' : '') + (gap * 100).toFixed(0)}%p</span>`}</div>
+      ${q ? `<blockquote class="v-q">${esc(q)}</blockquote>` : '<p class="muted" style="font-size:12.5px">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
+      <p class="v-act"><b>AI Insight</b> ${esc(INS.improve[x.cat] || '')}</p>
+    </div>`;
+  }).join('');
+  return `<div class="card mt"><h3>02. 핵심 Insight <small>가장 많이 언급된 주제 3개 · 결론 + 수치 + 실제 목소리</small></h3>
+    <div class="grid g3 v-ins-grid">${cards}</div>
+    <p class="src">한 줄 결론은 분류 결과를 풀어쓴 문장이고, 인용문만 실제 응답입니다(호칭·조직 표현 비식별, 긴 문장은 핵심만 발췌).</p></div>`;
+}
+
+function voiceQuoteCard(o) {
+  const q = voiceQuotes(o, 2);
+  if (!q.bad.length && !q.good) return '';
+  const one = (x, kind) => `<figure class="bigq ${kind}">
+      <blockquote>${esc(x.q || voiceQuote(x.ti))}</blockquote>
+      <figcaption>${esc(O[x.t[0]].name)} · ${esc(D.qtypes[x.t[1]])} · ${esc(catName(x.c[0]))}${x.t[4] ? ` · ${SIG[x.t[4]]}` : ''}</figcaption></figure>`;
+  return `<div class="card mt"><h3>03. 가장 주목해야 할 원문 <small>구성원이 직접 쓴 문장</small></h3>
+    ${q.bad.map(x => one(x, 'bad')).join('')}
+    ${q.good ? one(q.good, 'good') : ''}
+    <p class="src">저해 신호 강도와 표현 강도를 기준으로 자동 선정했습니다. 호칭·조직 표현은 비식별 처리했고, 응답 ${settings.minRaw}명 이상 조직의 원문만 사용합니다. 한 사람의 의견이므로 조직 전체의 사실로 해석하지 마세요.</p></div>`;
+}
+
+function kpwCard(o) {
+  const g = segment(o, 'good'), im = segment(o, 'improve'), pred = segPred('improve');
+  const list = (r, ok2, key) => Object.entries(r.sum).filter(([, v]) => ok2(v) && v.cat !== 'C0').sort((x, y) => y[1].n - x[1].n).slice(0, 3)
+    .map(([l, v]) => `<li><span>${esc(expTitle(l, key))}</span><b>${num(v.n)}건</b></li>`).join('');
+  const keep = list(g, v => v.sent === '긍정', 'good');
+  const prob = list(im, v => pred(v) && v.sent !== '중립', 'improve');
+  const wantSrc = {};
+  [g, im].forEach(r => Object.entries(r.sum).forEach(([l, v]) => { if (v.type === '개선 요청' && v.cat !== 'C0') wantSrc[l] = { n: (wantSrc[l]?.n || 0) + v.n, cat: v.cat }; }));
+  const want = Object.entries(wantSrc).sort((x, y) => y[1].n - x[1].n).slice(0, 3)
+    .map(([l, v]) => `<li><span>${esc(expTitle(l, 'improve'))}</span><b>${num(v.n)}건</b></li>`).join('');
+  const col = (cls, icon, title, sub, body) => `<div class="kpw ${cls}"><div class="kpw-h">${icon} <b>${title}</b><small>${sub}</small></div><ul>${body || '<li class="muted">해당 내용이 없습니다.</li>'}</ul></div>`;
+  return `<div class="card mt"><h3>04. Keep · Problem · Want <small>조직의 강점 / 현재 불편한 것 / 원하는 변화</small></h3>
+    <div class="grid g3">
+      ${col('keep', '👍', 'Keep', '잘하고 있는 점', keep)}
+      ${col('prob', '⚠️', 'Problem', '현재 가장 불편한 것', prob)}
+      ${col('want', '💡', 'Want', '구성원이 원하는 변화', want)}
+    </div>
+    <p class="src">Keep은 긍정 응답, Problem은 부정 응답, Want는 ‘개선 요청’ 유형 응답에서 많이 나온 순서입니다. 문장 수 기준이며 작성자 수가 아닙니다.</p></div>`;
+}
+
 function insightCard(o, key, label, sm, r) {
   const isGood = key === 'good', pred = segPred(key);
   const same = Object.entries(r.sum).filter(([l, v]) => l !== label && v.cat === sm.cat && pred(v)).sort((x, y) => y[1].n - x[1].n)[0];
@@ -613,12 +732,7 @@ function textBody(o) {
   const rows = all.filter(ti => { const t = T[ti]; if (!rawOk(O[t[0]])) return false; const c = clsFast(ti);
     return (!f.seg || t[1] === SEGS[f.seg].q) && (!f.c || c[0] === f.c) && (!f.s || (f.s === '의견 없음' ? c[2] === '의견 없음' : c[1] === f.s && c[2] !== '의견 없음')) && (!f.y || c[2] === f.y) && (!f.src || c[4] === f.src) && (!kw || t[3].includes(kw) || c[3].includes(kw)); });
   const pg = state.page.text || 0, per = 20, pages = Math.max(1, Math.ceil(rows.length / per)), p = Math.min(pg, pages - 1);
-  return `
-  <p class="src" style="margin:0 0 12px">${esc(o.name)} ${scope('sub')} · 원문은 보존하고, 경험 문장·주제·요약은 분류 결과를 풀어쓴 것입니다. ‘구성원의 목소리’만 실제 응답입니다.</p>
-  ${textOverview(o)}
-  <div class="grid mt">${segmentSection(o, 'good')}${segmentSection(o, 'improve')}</div>
-  ${contrastCard(o)}
-  <div class="card mt"><h3>응답 원문 <small>${num(rows.length)}건${hidden ? ` · 응답 ${settings.minRaw}명 미만 조직의 원문 ${num(hidden)}건 비공개(집계에는 포함)` : ''}</small></h3>
+  const rawCard = `<div class="card mt"><h3>응답 원문 <small>${num(rows.length)}건${hidden ? ` · 응답 ${settings.minRaw}명 미만 조직의 원문 ${num(hidden)}건 비공개(집계에는 포함)` : ''}</small></h3>
     <div class="filters">
       ${selectBox('text', 'seg', '전체 (잘하고 있는 점·개선이 필요한 점)', Object.entries(SEGS).map(([k, v]) => [k, v.name]))}
       ${selectBox('text', 'c', '전체 주제', [...CATS, 'C0'].map(c => [c, catName(c)]))}
@@ -633,6 +747,21 @@ function textBody(o) {
     ${pager('text', rows.length, p, pages, per)}
     <p class="src">오분류는 '수정'으로 고치고 사유를 남길 수 있습니다. 수정 결과는 이 PC에 저장되며, 데이터 관리/설정 > 데이터 현황에서 내보내 다음 데이터 갱신에 반영할 수 있습니다.</p>
   </div>`;
+  return `
+  <p class="src" style="margin:0 0 12px">${esc(o.name)} ${scope('sub')} · 결론과 수치는 분류 결과에서 계산했고, 인용문만 실제 응답입니다(호칭·조직 표현 비식별).</p>
+  ${voiceSnapCard(o)}
+  ${voiceInsightCard(o)}
+  ${voiceQuoteCard(o)}
+  ${kpwCard(o)}
+  <details class="detail-block mt" ${store.get('txtDetail', false) ? 'open' : ''}>
+    <summary>05. 상세 분석 <small>주제 분포 · 경험 카드 · 상반된 경험 · 원문 전체</small></summary>
+    <div class="detail-in">
+      ${textOverview(o)}
+      <div class="grid mt">${segmentSection(o, 'good')}${segmentSection(o, 'improve')}</div>
+      ${contrastCard(o)}
+      ${rawCard}
+    </div>
+  </details>`;
 }
 
 function editRow(ti, c) {
@@ -971,7 +1100,7 @@ function printReport(o, secs, cover) {
   const body = {
     sum: () => summaryBody(o),
     q: () => questionsBody(o),
-    txt: () => `${textOverview(o)}<div class="grid mt">${segmentSection(o, 'good')}${segmentSection(o, 'improve')}</div>${contrastCard(o)}`,
+    txt: () => `${voiceSnapCard(o)}${voiceInsightCard(o)}${voiceQuoteCard(o)}${kpwCard(o)}<div class="grid mt">${segmentSection(o, 'good')}${segmentSection(o, 'improve')}</div>`,
     lead: () => propBody(o, 'lead'),
     hr: () => propBody(o, 'hr'),
   };
@@ -1556,6 +1685,7 @@ function bind() {
   let timer;
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
   document.addEventListener('toggle', e => {
+    if (e.target.matches && e.target.matches('#view details.detail-block')) { store.set('txtDetail', e.target.open); return; }
     if (!e.target.matches || !e.target.matches('#view details.dist')) return;
     store.set('distOpen', e.target.open);
     document.querySelectorAll('#view details.dist').forEach(d => { if (d.open !== e.target.open) d.open = e.target.open; });
