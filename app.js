@@ -847,10 +847,9 @@ function leadAnalysisCards(o, r) {
   <div class="card mt"><h3>카테고리별 의견 ${scope('sub')} ${legend}</h3>
     <div class="bars">${cats.map(([c, ca]) => `<div class="bar-row" style="grid-template-columns:150px 1fr 150px"><span class="nm">${catName(c)}</span><div style="width:${ca.n / maxN * 100}%;min-width:2px">${sentStack(ca)}</div><span class="val">${num(ca.n)}건 <span class="muted" style="font-size:12px">긍정 ${num(ca.P)} · 요청 ${num(ca.req)}${ca.N ? ` · 부정 ${num(ca.N)}` : ''}</span></span></div>`).join('')}</div>
   </div>
-  <div class="grid g2 mt">
-    <div class="card"><h3>많이 나온 공통 의견 · 감사·긍정</h3>${common(v => v.sent === '긍정', 5)}</div>
-    <div class="card"><h3>많이 나온 공통 의견 · 요청·개선</h3>${common(leadIssue, 5)}</div>
-  </div>
+  <div class="card mt"><h3>주요 감사·긍정 의견 ${scope('sub')} <small>많이 나온 순서 · 감정이 긍정인 응답</small></h3>${common(v => v.sent === '긍정', 5)}</div>
+  <div class="card mt"><h3>주요 제안·요청 의견 ${scope('sub')} <small>많이 나온 순서 · 유형이 '개선 요청'인 응답</small></h3>${common(v => v.type === '개선 요청', 5)}</div>
+  <div class="card mt"><h3>주요 부정 의견 ${scope('sub')} <small>많이 나온 순서 · 감정이 부정·혼합인 응답</small></h3>${common(v => (v.sent === '부정' || v.sent === '혼합') && v.type !== '개선 요청', 5)}</div>
   <div class="card mt"><h3>주의 깊게 봐야 할 의견 <small>요청·부정 의견 중 강조·격한 표현 또는 확인 필요 신호 포함 · ${num(r.attnN)}건</small></h3>
     ${attn.length ? attn.map(g => `<div class="op"><div class="op-h"><b>${esc(g.sum)}</b><span class="muted">${num(g.n)}건</span></div><div class="chips" style="margin-top:2px">${tag(g.lv === 2 ? '우선 확인' : '표현 주의', g.lv === 2 ? 'high' : 'mid')}${tag(g.why)}${tag(catName(g.cat))}</div>${ex(g.ex)}</div>`).join('')
       : '<p class="muted">강조·격한 표현이 포함된 의견이 없습니다.</p>'}
