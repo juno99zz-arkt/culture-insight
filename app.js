@@ -54,7 +54,8 @@ const tStart = new Int32Array(O.length + 1);
 const textsIn = i => tOrder.slice(tStart[i], tStart[O[i].end]);
 const ownTexts = i => textsIn(i).filter(ti => T[ti][0] === i);
 
-const settings = { get minN() { return store.get('minN', 5); }, get minRaw() { return Math.max(store.get('minRaw', 10), this.minN); } };
+// 원문 공개는 최소 집계 기준(minN)만 적용한다. 더 엄격하게 두려면 설정에서 minRaw를 올릴 수 있다.
+const settings = { get minN() { return store.get('minN', 5); }, get minRaw() { return Math.max(store.get('minRaw', 0), this.minN); } };
 const ok = o => o.resp >= settings.minN;
 const rawOk = o => o.resp >= settings.minRaw;
 const caution = o => ok(o) && (o.resp < 10 || o.rate < 0.5);
@@ -65,6 +66,10 @@ const tkey = ti => O[T[ti][0]].code + '|' + T[ti][3];
 const cls = ti => { const v = OVR[tkey(ti)]; return v ? [v.category, v.sentiment, v.type, v.summary, '검토'] : C[T[ti][2]]; };
 let hasOvr = Object.keys(OVR).length > 0;
 const clsFast = ti => hasOvr ? cls(ti) : C[T[ti][2]];
+// 복수 주제: 한 응답에 여러 주제가 섞여 있으면 보조 주제도 함께 센다(언급 기준). 설정에서 끌 수 있음
+const multiOn = () => store.get('multiTopic', true);
+const secOf = ti => (multiOn() && T[ti][8] ? String(T[ti][8]).split(',').filter(Boolean) : []);
+const allCats = ti => [clsFast(ti)[0], ...secOf(ti)];
 
 const aggCache = new Map();
 function agg(i) {
@@ -102,6 +107,8 @@ const num = v => (+v).toLocaleString('ko-KR');
 const pct = v => (isFinite(v) ? Math.round(v * 100) : 0) + '%';
 const sg = v => v == null ? '-' : (v > 0 ? '+' : '') + (+v).toFixed(1);
 const dl = v => v == null ? '<span class="flat">-</span>' : `<span class="${v > 0.05 ? 'up' : v < -0.05 ? 'down' : 'flat'}">${v > 0.05 ? '▲' : v < -0.05 ? '▼' : '–'} ${Math.abs(v).toFixed(1)}</span>`;
+// 부호 있는 차이값에 색을 입힌다(음수 빨강). 전년 대비·전사 대비 표기를 같은 규칙으로 맞추기 위함
+const sgc = v => v == null ? '<span class="flat">-</span>' : `<span class="${v > 0.05 ? 'up' : v < -0.05 ? 'down' : 'flat'}">${sg(v)}</span>`;
 const sgw = v => Math.abs(v) < 0.05 ? '변동 없음' : `${Math.abs(v).toFixed(1)}점 ${v > 0 ? '상승' : '하락'}`;
 const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
 
@@ -306,7 +313,7 @@ function viewHome() {
   // ② 전사 브리핑 (데이터에서 계산한 사실만)
   const lvName = LV[lv];
   const brief = [
-    `전사 SCI는 <b>${f1(co.t[0])}점</b>으로 전년(${f1(co.t[1])}점) 대비 <b>${Math.abs(d1).toFixed(1)}점 ${d1 >= 0 ? '상승' : '하락'}</b>했습니다.`,
+    `전사 SCI는 <b>${f1(co.t[0])}점</b>으로 전년(${f1(co.t[1])}점) 대비 <b>${Math.abs(d1).toFixed(1)}점 ${d1 >= 0 ? '상승' : '하락'}</b>했습니다. (건강유형 ‘${healthOf(co.t[0], co.t[1])?.key || '비교 불가'}’)`,
     `${lvName} 단위 건강 유형은 ${HEALTH.map((h, i) => `${h.key} <b>${pct(hcnt[i] / hN)}</b>`).join(' · ')}입니다(${HEALTH_CUT}점 × 전년 대비 기준).`,
     `전년 비교 가능한 ${lvName} ${num(units.length)}개 중 <b>${pct(keep / (units.length || 1))}</b>는 전년 수준 이상을 유지했고, ${num(dropN.length)}개(${pct(allDrop)})는 1.5점 이상 하락했습니다.${hotBu ? ` 사업부별 하락 비율은 <b>${esc(O[hotBu.i].name)}</b>가 ${lvName} ${num(hotBu.n)}개 중 ${num(hotBu.d)}개(${pct(hotBu.r)})로 전사 평균(${pct(allDrop)})보다 높습니다.` : buRate.length > 1 ? ` 사업부별 하락 비율은 ${pct(buRate[buRate.length - 1].r)}~${pct(buRate[0].r)}입니다. 이 비율만으로 특정 사업부 집중 여부를 단정하지 않습니다.` : ''}`,
     `영역 중 가장 크게 움직인 것은 <b>'${D.areas[areaCh[0][0]]}'</b>(전년 대비 ${sg(areaCh[0][1])}점)이며, 항목에서는 ${itemLow.map(([k, v]) => `${ITEMS[k]}(${f1(v)})`).join('·')}이 가장 낮습니다.`,
@@ -386,7 +393,7 @@ function viewReport() {
   const o = O[state.org];
   if (state.tab.report === 'txt') state.tab.report = 'good';   // 이전 '서술형 분석' 탭 링크 호환
   const tb = curTab('report', 'sum');
-  const acts = ok(o) ? `<button class="btn" data-act="print">인쇄 / PDF</button><button class="btn" data-act="csv">예하조직 CSV</button>${tb === 'lead' || tb === 'hr' ? '<button class="btn" data-act="exportTasks">과제 관리 CSV</button>' : ''}` : '';
+  const acts = ok(o) ? `<button class="btn" data-act="print">인쇄 / PDF</button><button class="btn" data-act="dlReport" title="선택 조직 또는 예하조직 전체의 결과 리포트를 파일로 저장">리포트 다운로드</button><button class="btn" data-act="csv">예하조직 CSV</button>${tb === 'lead' || tb === 'hr' ? '<button class="btn" data-act="exportTasks">과제 관리 CSV</button>' : ''}` : '';
   const head = pageHead(`${esc(o.name)} ${o.leader ? `<span class="lead-chip">부서장 ${esc(o.leader)}</span>` : ''} ${reliTag(o)}`, `${LV[o.level]} · 대상 ${num(o.target)}명 · 응답 ${num(o.resp)}명 · 2026 진단`, acts);
   if (!ok(o)) return head + limitCard(o);
   const body = tb === 'q' ? questionsBody(o) : tb === 'good' ? voiceTab(o, 'good') : tb === 'bad' ? voiceTab(o, 'improve')
@@ -414,9 +421,9 @@ function summaryBody(o) {
     ${caution(o) ? `<div class="notice warn"><b>표본·응답률 주의</b> 응답 ${o.resp}명, 응답률 ${pct(o.rate)}로 결과 해석에 주의가 필요합니다.</div>` : ''}
     <div class="grid g5">
       <div class="card kpi"><div class="label">SCI 종합점수 ${scope('org')}</div><div class="value">${f1(o.t[0])}<small>점</small></div><div class="foot">2026 진단 ${healthTag(healthOf(o.t[0], o.t[1]))}</div><div class="src">2024 ${f1(o.t[2])} · 2025 ${f1(o.t[1])} · 2026 ${f1(o.t[0])}</div></div>
-      <div class="card kpi"><div class="label">응답률 ${scope('org')}</div><div class="donut">${donut(o.rate)}<div><div class="value" style="font-size:24px">${pct(o.rate)}</div><div class="foot muted">${num(o.resp)} / ${num(o.target)}명</div></div></div></div>
+      <div class="card kpi"><div class="label">응답률 ${scope('org')}</div><div class="donut">${donut(o.rate)}<div><div class="value sm">${pct(o.rate)}</div><div class="foot muted">${num(o.resp)} / ${num(o.target)}명</div></div></div></div>
       <div class="card kpi"><div class="label">전년비 ${scope('org')}</div><div class="value ${o.t[0] - o.t[1] >= 0 ? 'up' : 'down'}">${sg(o.t[0] - o.t[1])}<small>점</small></div><div class="foot muted">2025 ${f1(o.t[1])}점</div></div>
-      <div class="card kpi"><div class="label">${o.i ? '전사 대비' : '2024 대비'} ${scope(o.i ? 'all' : 'org')}</div><div class="value">${o.i ? sg(o.t[0] - O[0].t[0]) : sg(o.t[0] - o.t[2])}<small>점</small></div><div class="foot muted">${o.i ? `전사 ${f1(O[0].t[0])}점` : `2024 ${f1(o.t[2])}점`}</div></div>
+      <div class="card kpi"><div class="label">${o.i ? '전사 대비' : '2024 대비'} ${scope(o.i ? 'all' : 'org')}</div><div class="value ${(o.i ? o.t[0] - O[0].t[0] : o.t[0] - o.t[2]) >= 0 ? 'up' : 'down'}">${o.i ? sg(o.t[0] - O[0].t[0]) : sg(o.t[0] - o.t[2])}<small>점</small></div><div class="foot muted">${o.i ? `전사 ${f1(O[0].t[0])}점` : `2024 ${f1(o.t[2])}점`}</div></div>
       <div class="card kpi"><div class="label">${LV[o.level]} 단위 순위 ${scope('all')}</div><div class="value">${rk.n > 1 ? rk.r : '-'}<small>/ ${rk.n}</small></div><div class="foot muted">${rk.n > 1 ? (rk.top <= 0.5 ? `상위 ${Math.max(1, Math.round(rk.top * 100))}%` : `하위 ${Math.max(1, Math.round((1 - rk.top) * 100 + 100 / rk.n))}%`) : '비교 대상 없음'}</div></div>
     </div>
     <p class="src">전년 비교 참고: 과거 연도의 응답 규모와 조직 개편 여부는 데이터에 없어 확인되지 않았습니다. 조직 구성이 달라졌다면 직접 비교에 주의하세요.</p>
@@ -454,7 +461,7 @@ function subTable(o) {
   return table(['조직명', '부서장', '응답인원(명)', '응답률', '종합점수', '전년 대비', '전사 대비', '최저 항목'], rows.map(x => {
     if (!ok(x)) return `<tr><td>${orgLabel(x)}</td>${lead(x)}<td class="num">${x.resp}</td><td colspan="5" class="muted">분석 제한 (응답 ${settings.minN}명 미만 · 비공개)</td></tr>`;
     const g = gaps(x), wk = g.indexOf(Math.min(...g));
-    return `<tr class="click" data-org="${x.i}"><td>${orgLabel(x)} ${caution(x) ? tag('표본·응답률 주의', 'mid') : ''}</td>${lead(x)}<td class="num">${num(x.resp)}</td><td class="num">${pct(x.rate)}</td><td class="num">${f1(x.t[0])}</td><td class="num">${dl(x.t[0] - x.t[1])}</td><td class="num">${sg(x.t[0] - O[0].t[0])}</td><td>${ITEMS[wk]} <span class="down">${sg(g[wk])}</span></td></tr>`;
+    return `<tr class="click" data-org="${x.i}"><td>${orgLabel(x)} ${caution(x) ? tag('표본·응답률 주의', 'mid') : ''}</td>${lead(x)}<td class="num">${num(x.resp)}</td><td class="num">${pct(x.rate)}</td><td class="num">${f1(x.t[0])}</td><td class="num">${dl(x.t[0] - x.t[1])}</td><td class="num">${sgc(x.t[0] - O[0].t[0])}</td><td>${ITEMS[wk]} <span class="down">${sg(g[wk])}</span></td></tr>`;
   }));
 }
 
@@ -473,7 +480,7 @@ const deid = t => String(t).replace(/(사업부장|센터장|그룹장|부서장
 function segment(o, key) {
   const ck = o.i + '|' + key;
   if (segCache.has(ck)) return segCache.get(ck);
-  const seg = SEGS[key], r = { n: 0, none: 0, P: 0, U: 0, N: 0, M: 0, H: 0, req: 0, sum: {} };
+  const seg = SEGS[key], r = { n: 0, none: 0, P: 0, U: 0, N: 0, M: 0, H: 0, req: 0, sum: {}, sec: {}, secN: 0 };
   for (const ti of textsIn(o.i)) {
     const t = T[ti]; if (t[1] !== seg.q) continue;
     const c = clsFast(ti);
@@ -481,6 +488,11 @@ function segment(o, key) {
     r.n++; r[SENT_KEY[c[1]] || 'H']++; if (c[2] === '개선 요청') r.req++;
     const sm = r.sum[c[3]] || (r.sum[c[3]] = { n: 0, cat: c[0], sent: c[1], type: c[2], src: {}, ex: [], seen: new Set() });
     sm.n++; sm.src[c[4]] = (sm.src[c[4]] || 0) + 1;
+    if (segPred(key)({ sent: c[1], type: c[2] })) {           // 집계 대상 응답의 보조 주제만 센다
+      const sc = secOf(ti).filter(x => x !== c[0]);
+      if (sc.length) r.secN++;
+      sc.forEach(x => { r.sec[x] = (r.sec[x] || 0) + 1; });
+    }
     if (sm.ex.length < 12 && rawOk(O[t[0]])) { const d = deid(t[3]); if (!sm.seen.has(d)) { sm.seen.add(d); sm.ex.push([ti, d]); } }
   }
   segCache.set(ck, r);
@@ -507,6 +519,7 @@ function themes(o, key) {
   const r = segment(o, key), pred = segPred(key), co = o.i === 0 ? r : segment(O[0], key);
   const roll = rr => { const m = {}; let tot = 0;
     Object.entries(rr.sum).forEach(([l, v]) => { if (!pred(v) || v.cat === 'C0') return; const e = m[v.cat] || (m[v.cat] = { n: 0, labels: [] }); e.n += v.n; e.labels.push([l, v]); tot += v.n; });
+    Object.entries(rr.sec || {}).forEach(([c, n]) => { if (c === 'C0') return; const e = m[c] || (m[c] = { n: 0, labels: [] }); e.n += n; tot += n; });
     return [m, tot || 1]; };
   const [m, tot] = roll(r), [cm, ctot] = roll(co);
   const list = Object.entries(m).sort((x, y) => y[1].n - x[1].n).map(([c, e]) => { e.labels.sort((x, y) => y[1].n - x[1].n);
@@ -580,11 +593,13 @@ function insightCards(o, key) {
 
 function catShare(o, key) {
   const th = themes(o, key), isGood = key === 'good', max = th.list[0]?.n || 1, q = quality(o, key);
+  const secN = th.r.secN || 0;
   const qBar = `<div class="q-split">
     <div class="qs-head">전체 응답 <b>${num(q.total)}건</b> <span class="muted">‘${D.qtypes[SEGS[key].q]}’ 문항 · 문장 수</span></div>
     <div class="band-stack" style="height:16px">${QUAL.map(x => q[x.key] ? `<i style="width:${q[x.key] / (q.total || 1) * 100}%;background:${x.color}" title="${x.label} ${num(q[x.key])}건"></i>` : '').join('')}</div>
     <div class="qs-legend">${QUAL.map(x => `<span><i style="background:${x.color}"></i>${x.label} <b>${num(q[x.key])}건</b> · ${pct(q[x.key] / (q.total || 1))}</span>`).join('')}</div>
-    <p class="src">무의미 응답 = ‘없음’·‘잘 모르겠습니다’ 등 의견 없음 / 단순 칭찬·짧은·형식적 응답 = 주제가 드러나지 않거나 감사·격려만 있는 응답, 15자 미만 / 아래 카테고리별 비중은 ${isGood ? '긍정' : '부정·혼합·개선 요청'}으로 분류된 ${num(th.tot)}건 기준입니다.</p>
+    <p class="src">무의미 응답 = ‘없음’·‘잘 모르겠습니다’ 등 의견 없음 / 단순 칭찬·짧은·형식적 응답 = 주제가 드러나지 않거나 감사·격려만 있는 응답, 15자 미만 /
+      아래 카테고리별 비중은 <b>언급 수 ${num(th.tot)}회</b> 기준입니다${multiOn() && secN ? ` — 한 응답에 여러 주제가 섞인 ${num(secN)}건은 주제마다 1회씩 셌습니다(설정에서 끌 수 있음)` : ''}.</p>
   </div>`;
   return `<div class="card mt"><h3>카테고리별 비중 ${scope('sub')} <small>${isGood ? '긍정' : '부정·혼합·개선 요청'}으로 분류된 ${num(th.tot)}건 기준${o.i ? ' · 회색 글씨: 전사 비중' : ''}</small></h3>
     ${qBar}
@@ -614,7 +629,7 @@ function voiceSpot(o, key) {
       <figcaption>${esc(O[x.t[0]].name)} · ${esc(catName(x.c[0]))}${x.t[4] ? ' · ' + SIG[x.t[4]] : ''}</figcaption>
       <div class="bq-say"><b>해석</b> ${esc(expTitle(x.c[3], key))} — 같은 내용으로 분류된 응답 ${num(n)}건${!isGood && x.t[4] === 2 ? ' · 조직문화 저해 사례의 우선 검토 대상' : ''}</div></figure>`; }).join('')
       : '<p class="muted">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
-    <p class="src">${isGood ? '구체적인 경험이 드러나는 긍정 응답' : '저해 신호와 표현 강도가 높은 응답'}을 주제별로 1건씩 자동 선정했습니다. 한 사람의 의견이므로 조직 전체의 사실로 단정하지 마세요. 호칭·조직 표현은 비식별 처리했고, 응답 ${settings.minRaw}명 이상 조직의 원문만 사용합니다.</p></div>`;
+    <p class="src">${isGood ? '구체적인 경험이 드러나는 긍정 응답' : '저해 신호와 표현 강도가 높은 응답'}을 주제별로 1건씩 자동 선정했습니다. 한 사람의 의견이므로 조직 전체의 사실로 단정하지 마세요. 호칭·조직 표현은 비식별 처리했고, 결과가 공개되는 조직(응답 ${settings.minN}명 이상)의 원문만 사용합니다.</p></div>`;
 }
 
 function rawTable(o, key) {
@@ -1013,11 +1028,11 @@ function printReport(o, secs, cover) {
       <table class="pr-facts"><tbody>
         <tr><th>조직 단위</th><td>${LV[o.level]}</td><th>진단 연도</th><td>2026</td></tr>
         <tr><th>대상 인원</th><td>${num(o.target)}명</td><th>응답 인원</th><td>${num(o.resp)}명 (응답률 ${pct(o.rate)})</td></tr>
-        <tr><th>종합점수</th><td>${f1(o.t[0])}점 (전년 대비 ${sg(d1)})</td><th>전사 대비</th><td>${o.i ? `${sg(o.t[0] - O[0].t[0])}점 (전사 ${f1(O[0].t[0])})` : '-'}</td></tr>
+        <tr><th>종합점수</th><td>${f1(o.t[0])}점 (전년 대비 ${sgc(d1)})</td><th>전사 대비</th><td>${o.i ? `${sgc(o.t[0] - O[0].t[0])}점 (전사 ${f1(O[0].t[0])})` : '-'}</td></tr>
         <tr><th>응답 기준</th><td>${caution(o) ? '표본·응답률 주의' : '응답 기준 충족'}</td><th>출력일</th><td>${now().slice(0, 10)}</td></tr>
       </tbody></table>
       <div class="pr-toc"><h2>목차</h2><ol>${list.map(k => `<li><span>${PRINT_SECS[k]}</span><small>${PRINT_DESC[k]}</small></li>`).join('')}</ol></div>
-      <div class="pr-note"><b>읽기 전 참고</b> 점수와 의견은 구성원 인식에 기반한 진단 결과이며, 원인은 검증이 필요한 가설입니다. 자유기술 건수는 문장 수이며 작성자 수가 아닙니다. 응답 ${settings.minN}명 미만 조직은 결과를 공개하지 않았고, 원문은 응답 ${settings.minRaw}명 이상 조직만 비식별 처리해 인용했습니다. 개인 평가 자료로 사용하지 마십시오.</div>
+      <div class="pr-note"><b>읽기 전 참고</b> 점수와 의견은 구성원 인식에 기반한 진단 결과이며, 원인은 검증이 필요한 가설입니다. 자유기술 건수는 문장 수이며 작성자 수가 아닙니다. 응답 ${settings.minN}명 미만 조직은 결과를 공개하지 않았고, 원문은 공개 대상 조직만 비식별 처리해 인용했습니다. 개인 평가 자료로 사용하지 마십시오.</div>
       <div class="pr-foot">데이터 기준 ${esc(D.meta.built)}</div>
     </section>` : `<div class="pr-mini"><b>${esc(o.name)}</b> 조직문화 진단 결과 리포트 · 2026 · 응답 ${num(o.resp)}명(${pct(o.rate)}) · 출력 ${now().slice(0, 10)}</div>`;
   const sections = list.map((k, i) => {
@@ -1027,6 +1042,113 @@ function printReport(o, secs, cover) {
       ${html}</section>`;
   }).join('');
   return coverHtml + sections + `<div class="pr-end">본 리포트는 Culture Insight에서 자동 생성되었습니다 · 데이터 기준 ${esc(D.meta.built)}</div>`;
+}
+
+/* ---- 결과 리포트 파일 다운로드 (선택 조직 / 예하조직 전체) ---- */
+// 예하조직 전체 = 선택 조직 아래 모든 레벨. 결과 공개 기준(minN) 미만 조직은 제외한다
+const subTree = o => O.slice(o.i + 1, o.end);
+const DL_MAX = 50;   // 한 파일에 담는 조직 수 상한(생성 시간·파일 크기 보호)
+const dlScopes = o => ({
+  one: [o].filter(ok),
+  kids: [o, ...o.kids.map(i => O[i])].filter(ok),
+  sub: [o, ...subTree(o)].filter(ok),
+});
+
+// 파일에 앱 스타일을 그대로 넣는다. file:// 로 연 경우 브라우저가 스타일 읽기를 막으므로 원본 파일을 연결한다
+function reportCss() {
+  let css = '';
+  for (const sh of document.styleSheets) {
+    try { css += [...sh.cssRules].map(r => r.cssText).join('\n') + '\n'; } catch (e) { /* 보안 제한 */ }
+  }
+  return css;
+}
+const fileName = t => t.replace(/[\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+
+function dlIndex(list) {
+  if (list.length < 2) return '';
+  return `<section class="dl-index"><h2>리포트 목차 <small>${list.length}개 조직</small></h2>
+    ${table(['조직명', '조직 단위', '부서장', '응답인원(명)', '종합점수', '전년 대비', '전사 대비', '건강 유형'], list.map(x => {
+      const h = healthOf(x.t[0], x.t[1]);
+      return `<tr><td>${esc(x.name)}</td><td>${LV[x.level]}</td><td>${x.leader ? esc(x.leader) : '-'}</td><td class="num">${num(x.resp)}</td><td class="num">${f1(x.t[0])}</td><td class="num">${dl(x.t[0] - x.t[1])}</td><td class="num">${sgc(x.t[0] - O[0].t[0])}</td><td>${h ? healthTag(h) : '-'}</td></tr>`;
+    }))}</section>`;
+}
+
+function buildReportFile(list, bodies, root, sc) {
+  const css = reportCss();
+  const head = css.length > 1000 ? `<style>${css}</style>`
+    : `<link rel="stylesheet" href="${esc(new URL('style.css', location.href).href)}">`;
+  const pool = sc === 'sub' ? subTree(root).length : sc === 'kids' ? root.kids.length : 0;
+  const hidden = Math.max(0, pool - (list.length - 1));
+  const title = `${root.name} 조직문화 진단 결과 리포트`;
+  const body = bodies.map((h, i) => `<div class="dl-org ${i ? 'dl-break' : ''}">${h}</div>`).join('');
+  return `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>${head}
+<style>
+  body{background:#fff;margin:0}
+  #printArea{display:block!important;max-width:860px;margin:0 auto;padding:20px 20px 60px}
+  .dl-bar{max-width:860px;margin:0 auto;padding:14px 20px 0;font-size:13px;color:#4b5563}
+  .dl-bar b{color:#1c2430}
+  .dl-index{margin-bottom:18px}
+  .dl-index h2{font-size:17px;margin-bottom:10px}
+  .dl-index h2 small{font-weight:400;color:#8a93a0;font-size:12px;margin-left:6px}
+  @media print{
+    .dl-bar{display:none}
+    #printArea{max-width:none;margin:0;padding:0}
+    .dl-break{break-before:page}
+    .dl-index{break-after:page}
+  }
+</style></head>
+<body class="printing">
+<div class="dl-bar"><b>${esc(title)}</b> · 조직 ${list.length}개 · 출력 ${now()}<br>
+  PDF로 저장하려면 이 파일을 브라우저에서 열고 인쇄(Ctrl+P) 후 대상에서 ‘PDF로 저장’을 선택하세요. 배경 그래픽 옵션을 켜면 차트 색이 그대로 인쇄됩니다.<br>
+  응답 ${settings.minN}명 미만 조직은 결과를 공개하지 않습니다.${hidden ? ` (공개 기준 미충족 예하조직 ${hidden}개 제외)` : ''} 개인 평가 자료로 사용하지 마십시오.</div>
+<div id="printArea" class="print-doc">${dlIndex(list)}${body}</div>
+</body></html>`;
+}
+
+function openDownloadDialog() {
+  const o = O[state.org], sc = dlScopes(o);
+  const saved = store.get('printSecs', Object.keys(PRINT_SECS)).flatMap(k => k === 'txt' ? ['good', 'bad'] : [k]);
+  const opt = (v, label, n, desc) => {
+    const over = n > DL_MAX, off = n < 2 || over;
+    return `<label class="pr-opt"><input type="radio" name="sc" value="${v}" ${v === 'one' ? 'checked' : ''} ${off ? 'disabled' : ''}><span><b>${label}</b><small>${desc}</small></span></label>`;
+  };
+  const kidsN = sc.kids.length - 1, subN = sc.sub.length - 1;
+  const m = $('#modal');
+  m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="dlTitle">
+    <h3 id="dlTitle">결과 리포트 다운로드</h3>
+    <p class="muted" style="margin:0 0 12px;font-size:13px">화면의 리포트를 파일(HTML)로 저장합니다. 파일을 열어 인쇄하면 A4 PDF로 저장할 수 있습니다.</p>
+    <form id="dlForm">
+      <div class="pr-opts">
+        ${opt('one', '선택 조직만', 2, `${esc(o.name)} 리포트 1개`)}
+        ${opt('kids', '선택 조직 + 직속 예하조직', sc.kids.length, kidsN ? `${esc(o.name)} 포함 ${sc.kids.length}개 조직${sc.kids.length > DL_MAX ? ` — 한 번에 최대 ${DL_MAX}개까지만 받을 수 있습니다` : '을 한 파일로 저장'}` : '공개 기준을 충족하는 직속 예하조직이 없습니다')}
+        ${opt('sub', '선택 조직 + 예하조직 전체', sc.sub.length, subN ? `아래 모든 단위 포함 ${sc.sub.length}개 조직${sc.sub.length > DL_MAX ? ` — 한 번에 최대 ${DL_MAX}개까지만 받을 수 있습니다. 하위 조직을 선택해 나눠 받으세요` : '을 한 파일로 저장'}` : '공개 기준을 충족하는 예하조직이 없습니다')}
+      </div>
+      <div class="muted" style="font-size:12.5px;margin:12px 0 6px">포함할 항목</div>
+      <div class="pr-opts">${Object.entries(PRINT_SECS).map(([k, l]) => `<label class="pr-opt"><input type="checkbox" name="sec" value="${k}" ${saved.includes(k) ? 'checked' : ''}><span><b>${l}</b><small>${PRINT_DESC[k]}</small></span></label>`).join('')}</div>
+      <div class="pr-opt-row"><button type="button" class="btn sm" data-act="prAll">전체 선택</button><button type="button" class="btn sm" data-act="prNone">선택 해제</button>
+        <label class="chk"><input type="checkbox" name="cover" ${store.get('printCover', true) ? 'checked' : ''}> 조직마다 표지·목차 포함</label></div>
+      <p class="src" style="margin:10px 0 0">응답 ${settings.minN}명 미만 조직은 저장 대상에서 제외됩니다. 조직 1개당 약 80KB이며, 조직 수가 많으면 생성에 몇 초 걸립니다.</p>
+      <p id="dlMsg" class="err-msg" style="margin:6px 0 0"></p>
+      <div class="modal-actions"><button type="button" class="btn" data-act="closeModal">취소</button><button class="btn primary">저장</button></div>
+    </form></div>`;
+  m.hidden = false;
+}
+
+async function runDownload(sc, secs, cover) {
+  const root = O[state.org], all = dlScopes(root)[sc] || [root], list = all.slice(0, DL_MAX), msg = $('#dlMsg');
+  if (msg) { msg.className = 'muted'; msg.style.margin = '6px 0 0'; msg.textContent = `리포트 생성 중… 0 / ${list.length}`; }
+  await new Promise(r => setTimeout(r, 30));
+  const bodies = [];
+  for (let i = 0; i < list.length; i++) {
+    bodies.push(printReport(list[i], secs, cover));
+    if (msg && (i % 5 === 4 || i === list.length - 1)) { msg.textContent = `리포트 생성 중… ${i + 1} / ${list.length}`; await new Promise(r => setTimeout(r, 0)); }
+  }
+  const html = buildReportFile(list, bodies, root, sc);
+  const tail = sc === 'sub' ? '_예하조직전체' : sc === 'kids' ? '_직속예하조직' : '';
+  download(`${fileName(root.name)}${tail}_결과리포트_2026.html`, html, 'text/html;charset=utf-8');
+  closeModal();
 }
 
 function runPrint(secs, cover) {
@@ -1252,7 +1374,7 @@ function nlLocal(q, scopeI) {
     const label = item >= 0 ? ITEMS[item] : D.areas[area];
     return out([`${esc(scopeTxtF())} 중 '${label}' 점수가 ${lowWord ? '낮은' : '높은'} 조직입니다.`],
       table(['조직', '단위', `${label} 점수`, '전사 대비', '응답인원(명)'], rowsOf(arr, [x => `<td>${esc(x.name)} ${cTag(x)}</td>`, x => `<td>${LV[x.level]}</td>`, x => tdN(f1(val(x))),
-        x => tdN(sg(val(x) - (item >= 0 ? O[0].items[item] : O[0].area[area]))), x => tdN(x.resp)])), `근거: 점수집계표 '${label}' · 대상 ${pool().length}개 조직`);
+        x => tdN(sgc(val(x) - (item >= 0 ? O[0].items[item] : O[0].area[area]))), x => tdN(x.resp)])), `근거: 점수집계표 '${label}' · 대상 ${pool().length}개 조직`);
   }
   if ((lowWord || highWord) && /조직|팀|그룹|파트|실|사업부|점수|어디/.test(s)) {
     widen(3);
@@ -1394,7 +1516,7 @@ function viewSettings() {
         ${table(['구분', '파일', '건수'], D.meta.sources.map(s => `<tr><td>${esc(s.kind)}</td><td>${esc(s.file)}</td><td class="num">${num(s.rows)}</td></tr>`))}
         <div class="list mt">
           <div class="list-item"><span>조직 수 / 점수 비공개(응답 ${settings.minN}명 미만)</span><span>${num(O.length)} / ${O.filter(o => !ok(o)).length}개</span></div>
-          <div class="list-item"><span>원문 비공개(응답 ${settings.minRaw}명 미만)</span><span>${O.filter(o => ok(o) && !rawOk(o)).length}개 조직 추가</span></div>
+          <div class="list-item"><span>원문 추가 제한(응답 ${settings.minRaw}명 미만)</span><span>${O.filter(o => ok(o) && !rawOk(o)).length}개 조직 추가</span></div>
           <div class="list-item"><span>조직 매칭 실패 응답</span><span>${D.meta.unmatched}건</span></div>
           <div class="list-item"><span>부서장 사번 / 성명</span><span>적재하지 않음 / 저조부서 심층분석에만 표시</span></div>
         </div></div>
@@ -1419,7 +1541,7 @@ function viewSettings() {
     body = `<div class="grid g2">
       <div class="card"><h3>공개 · 집계 기준</h3><div class="form">
         <label>점수 공개 기준 (정량 응답인원)<select class="select" data-act="minN">${[5, 7, 10].map(n => `<option value="${n}" ${settings.minN === n ? 'selected' : ''}>${n}명 미만 비공개</option>`).join('')}</select></label>
-        <label>자유기술 원문 공개 기준 (정량 응답인원)<select class="select" data-act="minRaw">${[5, 10, 15, 20].map(n => `<option value="${n}" ${store.get('minRaw', 10) === n ? 'selected' : ''}>${n}명 미만 조직 원문 비공개</option>`).join('')}</select></label>
+        <label>자유기술 원문 추가 제한 (정량 응답인원)<select class="select" data-act="minRaw">${[0, 10, 15, 20].map(n => `<option value="${n}" ${store.get('minRaw', 0) === n ? 'selected' : ''}>${n ? `${n}명 미만 조직 원문 비공개` : '추가 제한 없음 (최소 집계 기준만 적용)'}</option>`).join('')}</select></label>
         <p class="muted" style="margin:0;font-size:13px">자유기술은 작성자 수를 알 수 없어, 정량 응답인원이 기준 이상이어도 특정 문장을 한 사람이 작성했을 수 있습니다. 그래서 원문은 점수보다 높은 기준을 적용하고, 비공개 조직의 응답도 상위 조직 집계에는 포함합니다.</p>
         <p class="muted" style="margin:0;font-size:13px"><b>응답 기준 충족</b>: 응답 10명 이상이고 응답률 50% 이상 (통계적 신뢰도 검증 결과는 아님)<br><b>표본·응답률 주의</b>: 응답 10명 미만 또는 응답률 50% 미만<br><b>검토 필요 사항</b>: 종합점수 전년 대비 -1.5점 이하(-3점 이하 우선), 전사 대비 -3점 이하, 영역 -3점 이하 하락, 항목 -5점 이하, 응답률 70% 미만, 자유기술 부정 비중 전사 대비 +10%p 이상</p></div></div>
       <div class="card"><h3>감정 · 유형 기준</h3><div class="sub" style="font-size:13px">
@@ -1634,6 +1756,7 @@ function bind() {
       if (a === 'print') { if (state.view === 'report') openPrintDialog(); else window.print(); }
       if (a === 'closeModal') closeModal();
       if (a === 'prAll' || a === 'prNone') document.querySelectorAll('#printForm input[name=sec]').forEach(x => { x.checked = a === 'prAll'; });
+      if (a === 'dlReport') openDownloadDialog();
       if (a === 'csv') csvExport();
       if (a === 'cancelEdit') { state.edit = null; render(); }
       if (a === 'regenProps') { const pk = llmPropKey(O[state.org], curTab('report', 'sum')), cache = store.get('llmProps', {}); delete cache[pk]; store.set('llmProps', cache); state.llmErr = null; render(); }
@@ -1674,6 +1797,12 @@ function bind() {
       if (!secs.length) { $('#prMsg').textContent = '인쇄할 항목을 하나 이상 선택하세요.'; return; }
       store.set('printSecs', secs); store.set('printCover', cover);
       closeModal(); runPrint(secs, cover); return;
+    }
+    if (fm.id === 'dlForm') {
+      const secs = d.getAll('sec'), cover = d.get('cover') === 'on';
+      if (!secs.length) { $('#dlMsg').textContent = '포함할 항목을 하나 이상 선택하세요.'; return; }
+      store.set('printSecs', secs); store.set('printCover', cover);
+      await runDownload(d.get('sc') || 'one', secs, cover); return;
     }
     if (fm.id === 'askForm') { const v = $('#askInput').value; $('#askInput').value = ''; ask(v); }
     if (fm.id === 'ovrForm') {

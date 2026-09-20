@@ -98,10 +98,14 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card h3 small{font-weight:400;color:var(--muted);font-size:12px}
 .mt{margin-top:16px}
 
-.kpi .label{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.01em;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+/* 카드마다 제목 줄 수·숫자 크기가 달라도 값 위치가 어긋나지 않도록 줄 높이를 고정한다 */
+.kpi .label{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.01em;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;line-height:1.25;min-height:44px;align-items:flex-end;align-content:flex-end}
 .kpi .label .muted{font-size:12px;font-weight:400}
-.kpi .value{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-top:2px}
-.kpi .value small{font-size:14px;font-weight:500;color:var(--muted);margin-left:2px}
+.kpi .value{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-top:2px;line-height:43px;min-height:43px}
+.kpi .value.sm{font-size:24px}
+.kpi .value small{font-size:14px;font-weight:500;color:var(--muted);margin-left:2px;line-height:1}
+.kpi .donut{margin-top:2px;align-items:flex-start}
+.kpi .donut .value{margin-top:0}
 .kpi .foot{font-size:12.5px;margin-top:2px}
 
 .up{color:var(--pos)} .down{color:var(--neg)} .flat{color:var(--muted)}
@@ -236,7 +240,7 @@ ol.steps{margin:0;padding-left:18px;display:grid;gap:4px}
 
 /* ---------- scope · review · tracking ---------- */
 .scope{display:inline-block;margin-left:6px;padding:0 7px;border-radius:999px;border:1px dashed #c9cfd8;color:var(--muted);font-size:11px;font-weight:400;line-height:18px;white-space:nowrap;vertical-align:middle}
-.kpi .label .scope{margin-left:auto}
+.kpi .label .scope{margin-left:auto;font-size:11px;line-height:1.2;padding:1px 7px}
 .cmp{margin-left:8px;color:var(--muted);font-size:12px}
 .status-line{margin:0;font-size:15px;line-height:1.6}
 .status-line .tag{vertical-align:middle}
@@ -371,7 +375,7 @@ details.track[open] summary{margin-bottom:8px}
 
 /* ---------- 인쇄 옵션 창 ---------- */
 .modal{position:fixed;inset:0;background:rgba(20,26,40,.45);display:grid;place-items:center;z-index:50;padding:16px}
-.modal-card{background:var(--surface);border-radius:14px;width:100%;max-width:520px;padding:22px 24px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.modal-card{background:var(--surface);border-radius:14px;width:100%;max-width:520px;padding:22px 24px;box-shadow:0 20px 50px rgba(0,0,0,.25);max-height:calc(100vh - 32px);overflow:auto}
 .modal-card h3{font-size:18px;margin-bottom:6px}
 .pr-opts{display:grid;gap:8px}
 .pr-opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
