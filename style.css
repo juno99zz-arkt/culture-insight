@@ -638,3 +638,15 @@ details.dist[open] .when-closed{display:none}
 .ai-grid.fill .ai-col .bars{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:6px}
 .lead-cell{white-space:nowrap;font-size:13px}
 @media print{.print-doc .g5{grid-template-columns:repeat(5,minmax(0,1fr))}}
+
+/* ---- 자유기술: 종합요약란 · 응답 성격 구분 ---- */
+.voice-sum{background:var(--bg2);border-radius:10px;padding:14px 16px;margin:2px 0 14px}
+.voice-sum p{margin:0 0 8px;font-size:14.5px;line-height:1.65;padding-left:14px;position:relative}
+.voice-sum p:last-child{margin-bottom:0}
+.voice-sum p:before{content:'-';position:absolute;left:0;color:var(--muted)}
+.q-split{margin:2px 0 14px}
+.qs-head{font-size:14px;margin-bottom:6px}
+.qs-head b{font-size:16px}
+.qs-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.qs-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.qs-legend b{color:var(--text)}

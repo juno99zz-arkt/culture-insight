@@ -511,10 +511,27 @@ function themes(o, key) {
   return { r, list, tot };
 }
 
-function insightTop3(o, key, home) {
+// 문항 안에서 응답을 성격별로 구분 (의미 있는 / 단순 칭찬·짧은·형식적 / 무의미)
+const QUAL = [
+  { key: 'meaning', label: '의미 있는 응답', color: 'var(--accent)' },
+  { key: 'formal', label: '단순 칭찬·짧은·형식적 응답', color: '#9aa4b5' },
+  { key: 'none', label: '무의미 응답', color: '#d7dbe2' },
+];
+function quality(o, key) {
+  const qn = SEGS[key].q, r = { total: 0, meaning: 0, formal: 0, none: 0 };
+  textsIn(o.i).forEach(ti => {
+    const t = T[ti]; if (t[1] !== qn) return;
+    const c = clsFast(ti); r.total++;
+    if (c[2] === '의견 없음') r.none++;
+    else if (c[0] === 'C0' || c[2] === '감사·격려' || String(t[3]).trim().length < 15) r.formal++;
+    else r.meaning++;
+  });
+  return r;
+}
+
+function insightTop3(o, key) {
   const th = themes(o, key), top = th.list.slice(0, 3), isGood = key === 'good';
-  const title = home ? `💬 이번 진단에서 구성원이 가장 많이 이야기한 것 <small>전사 '노력해야 할 점' · Top 3 Insight</small>`
-    : `💬 구성원들은 지금 이렇게 말하고 있습니다 ${scope('sub')} <small>Top 3 Insight · 숫자 + 해석 + 실제 목소리</small>`;
+  const title = `💬 구성원들은 지금 이렇게 말하고 있습니다 ${scope('sub')} <small>Top 3 Insight · 숫자 + 해석 + 실제 목소리</small>`;
   if (!top.length) return `<div class="card mt"><h3>${title}</h3><p class="muted">분석할 응답이 없습니다.</p></div>`;
   const cards = top.map((x, i) => {
     const cand = (x.sm.ex || []).map(([ti]) => voiceQuote(ti)).filter(t => t.length >= 25);
@@ -527,16 +544,34 @@ function insightTop3(o, key, home) {
       ${q ? `<blockquote class="v-q">${esc(q)}</blockquote>` : '<p class="muted" style="font-size:12.5px;margin:0">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
       <p class="v-act"><b>AI Insight</b> ${esc((isGood ? INS.keep : INS.improve)[x.cat] || '')}</p></div>`;
   }).join('');
+  // 종합요약란: ① 많이 나온 주제와 내용 ② 그 밖에 눈에 띈 응답 ③ 반대 성격의 응답 건수
+  const sum2 = th.list.slice(3, 6).filter(x => x.n >= 2);
+  const revType = isGood ? '개선 요청' : '칭찬·인정';
+  const revList = Object.entries(th.r.sum).filter(([, v]) => v.type === revType || (!isGood && v.sent === '긍정'))
+    .sort((x, y) => y[1].n - x[1].n);
+  const revN = revList.reduce((a, [, v]) => a + v.n, 0);
+  const lines = [
+    `${top.map(x => `<b>${esc(catName(x.cat))}</b>(${pct(x.share)})`).join(', ')}에 대한 이야기가 가장 많습니다.
+     구성원들은 ${top.map(x => esc(expTitle(x.label, key))).join(' · ')}.`,
+    sum2.length ? `그 밖에 ${sum2.map(x => `${esc(expTitle(x.label, key))}(${esc(catName(x.cat))} ${num(x.n)}건)`).join(' · ')} 응답도 있었습니다.` : '',
+    revN ? `‘${D.qtypes[SEGS[key].q]}’ 문항이지만 ${isGood ? '추가로 개선되면 좋겠다는' : '긍정적으로 평가한'} 의견도 ${num(revN)}건 있었습니다${revList[0] ? ` (가장 많은 내용: ${esc(expTitle(revList[0][0], isGood ? 'improve' : 'good'))})` : ''}.` : '',
+  ].filter(Boolean);
   return `<div class="card mt"><h3>${title}</h3>
-    <p class="v-lead"><b>${esc(catName(top[0].cat))}</b> 이야기가 가장 많습니다 — ${esc(expTitle(top[0].label, key))}</p>
+    <div class="voice-sum">${lines.map(x => `<p>${x}</p>`).join('')}</div>
     <div class="grid g3 v-ins-grid">${cards}</div>
-    <p class="src">큰 숫자는 주제(카테고리) 합계이고, 세부 의견 건수는 별도로 표시합니다. 건수는 문장 수이며 작성자 수가 아닙니다. 한 줄 해석은 분류 결과를 풀어쓴 문장이며, 인용문만 실제 응답입니다(호칭·조직 표현 비식별, 긴 문장은 핵심만 발췌).</p>
-    ${home ? `<div class="v-more"><span class="click" data-org="0" data-go="report" data-tabset="report:bad">노력해야 할 점 전체 분석 →</span></div>` : ''}</div>`;
+    <p class="src">종합요약과 한 줄 해석은 분류 결과를 풀어쓴 문장이고, 인용문만 실제 응답입니다(호칭·조직 표현 비식별, 긴 문장은 핵심만 발췌). 큰 숫자는 주제(카테고리) 합계이며 건수는 문장 수입니다.</p></div>`;
 }
 
 function catShare(o, key) {
-  const th = themes(o, key), isGood = key === 'good', max = th.list[0]?.n || 1;
+  const th = themes(o, key), isGood = key === 'good', max = th.list[0]?.n || 1, q = quality(o, key);
+  const qBar = `<div class="q-split">
+    <div class="qs-head">전체 응답 <b>${num(q.total)}건</b> <span class="muted">‘${D.qtypes[SEGS[key].q]}’ 문항 · 문장 수</span></div>
+    <div class="band-stack" style="height:16px">${QUAL.map(x => q[x.key] ? `<i style="width:${q[x.key] / (q.total || 1) * 100}%;background:${x.color}" title="${x.label} ${num(q[x.key])}건"></i>` : '').join('')}</div>
+    <div class="qs-legend">${QUAL.map(x => `<span><i style="background:${x.color}"></i>${x.label} <b>${num(q[x.key])}건</b> · ${pct(q[x.key] / (q.total || 1))}</span>`).join('')}</div>
+    <p class="src">무의미 응답 = ‘없음’·‘잘 모르겠습니다’ 등 의견 없음 / 단순 칭찬·짧은·형식적 응답 = 주제가 드러나지 않거나 감사·격려만 있는 응답, 15자 미만 / 아래 카테고리별 비중은 ${isGood ? '긍정' : '부정·혼합·개선 요청'}으로 분류된 ${num(th.tot)}건 기준입니다.</p>
+  </div>`;
   return `<div class="card mt"><h3>카테고리별 비중 ${scope('sub')} <small>${isGood ? '긍정' : '부정·혼합·개선 요청'}으로 분류된 ${num(th.tot)}건 기준${o.i ? ' · 회색 글씨: 전사 비중' : ''}</small></h3>
+    ${qBar}
     ${th.list.length ? `<div class="bars cat-bars">${th.list.map(x => bar(catName(x.cat), x.n, max, { cls: isGood ? 'pos' : 'neg', val: `${num(x.n)}건 · <b>${pct(x.share)}</b>${o.i ? ` <span class="muted">${pct(x.cshare)}</span>` : ''}` })).join('')}</div>` : '<p class="muted">분석할 응답이 없습니다.</p>'}</div>`;
 }
 
@@ -564,7 +599,7 @@ function voiceSpot(o, key) {
   const score = x => isGood ? Math.min(x.q.length, 100) / 10 + (r.sum[x.c[3]]?.n || 0) / 50
     : x.t[4] * 10 + (STRONG_RE.test(x.q) ? 4 : 0) + (x.c[1] === '부정' ? 2 : 0) + Math.min(x.q.length, 100) / 50;
   list.filter(x => x.q.length >= 30).sort((a, b) => score(b) - score(a)).forEach(x => { if (out.length < 3 && !seen.has(x.c[3])) { seen.add(x.c[3]); out.push(x); } });
-  return `<div class="card mt"><h3>가장 주목해야 할 목소리 ${scope('sub')} <small>원문 + 해석</small></h3>
+  return `<div class="card mt"><h3>주목해야 할 목소리 ${scope('sub')} <small>원문 + 해석</small></h3>
     ${out.length ? out.map(x => { const n = r.sum[x.c[3]]?.n || 1; return `<figure class="bigq ${isGood ? 'good' : 'bad'}"><blockquote>${esc(x.q)}</blockquote>
       <figcaption>${esc(O[x.t[0]].name)} · ${esc(catName(x.c[0]))}${x.t[4] ? ' · ' + SIG[x.t[4]] : ''}</figcaption>
       <div class="bq-say"><b>해석</b> ${esc(expTitle(x.c[3], key))} — 같은 내용으로 분류된 응답 ${num(n)}건${!isGood && x.t[4] === 2 ? ' · 조직문화 저해 사례의 우선 검토 대상' : ''}</div></figure>`; }).join('')
