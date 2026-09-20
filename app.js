@@ -257,8 +257,8 @@ const HEALTH = [
   { key: '개선', desc: `${HEALTH_CUT}점 미만 · 전년 대비 유지/상승`, color: '#b08a1e', bg: '#fbf4dc' },
   { key: '주의', desc: `${HEALTH_CUT}점 미만 · 전년 대비 하락`, color: '#c0443e', bg: '#f4d3d1' },
 ];
-// 전년 대비 변화가 반올림 0.0(-0.05 초과)이면 '유지'로 본다. 전년 점수가 없으면 판정하지 않는다.
-const healthOf = (v, prev) => v == null || prev == null ? null : HEALTH[(v >= HEALTH_CUT ? 0 : 2) + (v - prev > -0.05 ? 0 : 1)];
+// 원점수 기준: 전년 대비 0 이상은 유지·상승. 비교 점수가 없으면 판정하지 않는다.
+const healthOf = (v, prev) => !Number.isFinite(v) || !Number.isFinite(prev) ? null : HEALTH[(v >= HEALTH_CUT ? 0 : 2) + (v >= prev ? 0 : 1)];
 const healthTag = h => h ? `<span class="hl-tag" style="background:${h.bg};color:${h.color}">${h.key}</span>` : '<span class="hl-tag muted">비교 불가</span>';
 const healthCount = list => { const c = HEALTH.map(() => 0); list.forEach(x => { const h = healthOf(x.t[0], x.t[1]); if (h) c[HEALTH.indexOf(h)]++; }); return c; };
 const healthStack = (list, h = 10) => {
@@ -281,7 +281,7 @@ function viewHome() {
   const co = O[0], ca = agg(0), d1 = co.t[0] - co.t[1];
   const f = state.f.home || (state.f.home = { lv: '5' });
   const lv = +f.lv;
-  const units = O.filter(x => x.level === lv && ok(x));
+  const units = O.filter(x => x.level === lv && ok(x) && Number.isFinite(x.t[0]) && Number.isFinite(x.t[1]));
   const hcnt = healthCount(units), hN = hcnt.reduce((a, b) => a + b, 0) || 1;
   const keep = units.filter(x => x.t[0] - x.t[1] >= 0).length, dropN = units.filter(x => x.t[0] - x.t[1] <= -1.5);
   const bus = O.filter(x => x.level === 3);
@@ -298,6 +298,10 @@ function viewHome() {
   const impCats = {}; Object.values(im.sum).filter(impPred).forEach(v => { if (v.cat !== 'C0') impCats[v.cat] = (impCats[v.cat] || 0) + v.n; });
   const impFocus = Object.values(im.sum).filter(impPred).reduce((acc, v) => acc + v.n, 0) || 1;
   const topImp = Object.entries(impCats).sort((x, y) => y[1] - x[1]);
+  const QSHORT = ['잘하고 있는 점', '노력해야 할 점', '부서장 제언'];
+  const qStat = [0, 1, 2].map(() => ({ n: 0, none: 0 }));
+  textsIn(0).forEach(ti => { const st = qStat[T[ti][1]]; st.n++; if (clsFast(ti)[2] === '의견 없음') st.none++; });
+  const goodTop = themes(co, 'good').list.slice(0, 2);
   const rev = store.get('review', {});
   const sigTexts = T.map((t, ti) => [t, ti]).filter(([t]) => t[4] > 0);
   const reviewed = sigTexts.filter(([t, ti]) => ['확인 완료', '해당 없음'].includes(rev[rkey(ti)]?.status)).length;
@@ -307,8 +311,9 @@ function viewHome() {
   const brief = [
     `전사 SCI는 <b>${f1(co.t[0])}점</b>으로 전년(${f1(co.t[1])}점) 대비 <b>${Math.abs(d1).toFixed(1)}점 ${d1 >= 0 ? '상승' : '하락'}</b>했습니다.`,
     `${lvName} 단위 건강 유형은 ${HEALTH.map((h, i) => `${h.key} <b>${pct(hcnt[i] / hN)}</b>`).join(' · ')}입니다(${HEALTH_CUT}점 × 전년 대비 기준).`,
-    `전체 ${lvName} ${num(units.length)}개 중 <b>${pct(keep / (units.length || 1))}</b>는 전년 수준 이상을 유지했고, ${num(dropN.length)}개(${pct(allDrop)})는 1.5점 이상 하락했습니다.${hotBu ? ` 사업부별 하락 비율은 <b>${esc(O[hotBu.i].name)}</b>가 ${lvName} ${num(hotBu.n)}개 중 ${num(hotBu.d)}개(${pct(hotBu.r)})로 전사 평균(${pct(allDrop)})보다 높습니다.` : buRate.length > 1 ? ` 사업부별 하락 비율은 ${pct(buRate[buRate.length - 1].r)}~${pct(buRate[0].r)}로 특정 사업부에 치우치지 않았습니다.` : ''}`,
+    `전년 비교 가능한 ${lvName} ${num(units.length)}개 중 <b>${pct(keep / (units.length || 1))}</b>는 전년 수준 이상을 유지했고, ${num(dropN.length)}개(${pct(allDrop)})는 1.5점 이상 하락했습니다.${hotBu ? ` 사업부별 하락 비율은 <b>${esc(O[hotBu.i].name)}</b>가 ${lvName} ${num(hotBu.n)}개 중 ${num(hotBu.d)}개(${pct(hotBu.r)})로 전사 평균(${pct(allDrop)})보다 높습니다.` : buRate.length > 1 ? ` 사업부별 하락 비율은 ${pct(buRate[buRate.length - 1].r)}~${pct(buRate[0].r)}입니다. 이 비율만으로 특정 사업부 집중 여부를 단정하지 않습니다.` : ''}`,
     `영역 중 가장 크게 움직인 것은 <b>'${D.areas[areaCh[0][0]]}'</b>(전년 대비 ${sg(areaCh[0][1])}점)이며, 항목에서는 ${itemLow.map(([k, v]) => `${ITEMS[k]}(${f1(v)})`).join('·')}이 가장 낮습니다.`,
+    goodTop.length ? `자유기술 '잘하고 있는 점'에서는 <b>${catName(goodTop[0].cat)}</b>(${pct(goodTop[0].share)})${goodTop[1] ? `, <b>${catName(goodTop[1].cat)}</b>(${pct(goodTop[1].share)})` : ''} 관련 의견이 가장 많았습니다.` : '',
     topImp.length ? `자유기술 '노력해야 할 점'에서는 <b>${catName(topImp[0][0])}</b>(${pct(topImp[0][1] / impFocus)}), <b>${catName(topImp[1]?.[0] || topImp[0][0])}</b>(${pct((topImp[1]?.[1] || 0) / impFocus)}) 관련 의견이 가장 많았습니다.` : '',
     `현재 HR 확인이 필요한 <b>우선 검토 신호는 ${num(ca.hi)}건</b>, 일반 검토 신호는 ${num(ca.mid)}건입니다.`,
   ].filter(Boolean);
@@ -321,7 +326,6 @@ function viewHome() {
     ${tv.map((v, i) => `<circle cx="${tx(i)}" cy="${ty(v).toFixed(1)}" r="${i === 2 ? 5 : 3.5}" fill="${i === 2 ? 'var(--accent)' : '#fff'}" stroke="var(--accent)" stroke-width="2"/><text x="${tx(i)}" y="${(ty(v) - 10).toFixed(1)}" text-anchor="middle" class="t-val">${f1(v)}</text><text x="${tx(i)}" y="106" text-anchor="middle" class="t-yr">${2024 + i}</text>`).join('')}
   </svg>`;
   const areaPrevAvg = mean(co.areaPrev), mismatch = Math.abs(areaPrevAvg - co.t[1]) > 0.5;
-  const maxAbs = Math.max(1, ...co.area.map((v, k) => Math.abs(v - co.areaPrev[k])));
 
   // 사업부 Heatmap
   const heatRows = bus.map(x => {
@@ -353,35 +357,35 @@ function viewHome() {
   return `
   <div class="page-head"><div><h2>2026 전사 조직문화 Overview</h2><p>우리 회사 조직문화에 지금 무슨 일이 일어나고 있는가 · 홈은 항상 전사 기준이며, 조직을 누르면 부서별 결과 리포트로 이동합니다.</p></div></div>
 
-  <div class="grid g5 snap">
+  <div class="grid g4 snap">
     <div class="card kpi"><div class="label">전사 SCI ${scope('all')}</div><div class="value">${f1(co.t[0])}<small>점</small></div><div class="foot muted">2026 진단 ${healthTag(healthOf(co.t[0], co.t[1]))}</div></div>
     <div class="card kpi"><div class="label">전년 대비</div><div class="value ${d1 >= 0 ? 'up' : 'down'}">${sg(d1)}<small>점</small></div><div class="foot muted">2025 ${f1(co.t[1])}점</div></div>
     <div class="card kpi"><div class="label">응답률</div><div class="value">${pct(co.rate)}</div><div class="foot muted">${num(co.resp)} / ${num(co.target)}명</div></div>
-    <div class="card kpi"><div class="label">자유기술</div><div class="value">${num(ca.n)}<small>건</small></div><div class="foot muted">문장 수 · 의견 없음 ${num(ca.none)}건 포함</div></div>
-    <div class="card kpi click" data-go="signal"><div class="label">확인 필요 신호</div><div class="value" style="color:var(--high)">${num(ca.hi)}<small>건 우선</small></div><div class="foot muted">일반 검토 ${num(ca.mid)}건</div></div>
+    <div class="card kpi"><div class="label">자유기술</div><div class="value">${num(ca.n)}<small>건</small></div>
+      <div class="kpi-lines">${QSHORT.map((q, i) => `<div><span>${q}</span><b>${num(qStat[i].n - qStat[i].none)}건</b></div>`).join('')}
+        <div class="src">의견 없음·무의미 응답 ${num(ca.none)}건 제외 · 문장 수</div></div></div>
   </div>
 
-  <div class="card mt"><h3>영역별 결과 ${scope('all')} <small>건강 유형 (2026 점수, 전년 대비)</small></h3>
-    <div class="area-boxes">${co.area.map((_, k) => areaBox(co, k)).join('')}</div></div>
-
   <div class="grid g-main mt">
-    <div class="card home-brief"><h3>2026 전사 조직문화 브리핑 ${scope('all')}</h3>
-      <ol>${brief.map(x => `<li>${x}</li>`).join('')}</ol>
-      <p class="src">자동 생성 요약 · 점수집계표와 자유기술 분류 결과에서 계산한 사실만 사용합니다. 전년 자유기술 데이터가 없어 의견의 증감은 판단하지 않습니다.</p></div>
+    <div class="card"><h3>영역별 건강유형 ${scope('all')} <small>2026 점수(전년 대비)</small></h3>
+      <div class="area-list">${co.area.map((v, k) => { const dv = v - co.areaPrev[k];
+        return `<div class="area-row"><span class="ar-name">${D.areas[k]}</span><span class="ar-val">${f1(v)}<small class="${dv >= 0 ? 'up' : 'down'}">(${sg(dv)})</small></span>${healthTag(healthOf(v, co.areaPrev[k]))}</div>`; }).join('')}</div>
+      <p class="src">${HEALTH.map(h => `${h.key} ${h.desc}`).join(' / ')}</p></div>
     <div class="card"><h3>전사 Trend <small>2024 → 2026</small></h3>${homeTrend}
-      <div class="muted" style="font-size:12px;margin:6px 0 4px">영역별 전년 대비 변화</div>
-      <div class="area-ch">${co.area.map((v, k) => { const dv = v - co.areaPrev[k]; return `<div class="ac-row"><span>${D.areas[k]}</span><div class="ac-bar"><i class="${dv >= 0 ? 'pos' : 'neg'}" style="width:${Math.abs(dv) / maxAbs * 50}%;${dv >= 0 ? 'left:50%' : `right:50%`}"></i></div><b class="${dv >= 0 ? 'up' : 'down'}">${sg(dv)}</b></div>`; }).join('')}</div>
       ${mismatch ? `<p class="src">참고: 영역 전년 점수 평균(${f1(areaPrevAvg)})과 전년 종합점수(${f1(co.t[1])})가 일치하지 않습니다. 원천 데이터 확인이 필요합니다.</p>` : ''}</div>
   </div>
 
-  <div class="card mt home-dist"><h3>조직 분포 · 건강 유형 ${scope('all')} <span>${unitSel}</span></h3>
-    <div class="dist-head"><div><div class="muted" style="font-size:12px">전사 SCI</div><div class="dist-score">${f1(co.t[0])}<small>점</small></div>${healthTag(healthOf(co.t[0], co.t[1]))}</div>
-      ${healthMatrix(hcnt, hN)}</div>
-    ${healthStack(units, 16)}
-    <p class="src" style="margin:6px 0 16px">${lvName} ${num(units.length)}개 기준(응답 ${settings.minN}명 이상) · SCI는 조직문화 건강도를 ${HEALTH_CUT}점과 전년 대비 변화로 4가지 유형(우수·양호·개선·주의)으로 구분합니다.</p>
+  <div class="card mt home-dist"><h3>예하 조직 결과 ${scope('all')} <span>${unitSel}</span></h3>
+    ${healthStack(units, 14)}
+    <div class="hl-legend">${HEALTH.map((h, i) => `<span><i style="background:${h.color}"></i>${h.key} <b>${num(hcnt[i])}개</b> · ${pct(hcnt[i] / hN)}</span>`).join('')}</div>
+    <p class="src" style="margin:6px 0 16px">${lvName} ${num(units.length)}개 기준(응답 ${settings.minN}명 이상) · SCI는 조직문화 건강도를 ${HEALTH_CUT}점과 전년 대비 변화로 4가지 유형(${HEALTH.map(h => h.key).join('·')})으로 구분합니다.</p>
     <div class="tbl-wrap"><table class="tbl heatmap"><thead><tr><th>사업부</th><th>부서장</th><th>2026 SCI</th><th>전년 대비</th><th>건강 유형</th><th>${lvName} 분포 (건강 유형)</th></tr></thead><tbody>${heatRows}</tbody></table></div>
     <p class="src">SCI 색은 전사 대비 차이(초록: 높음 · 주황: 낮음), 분포 막대 색은 건강 유형(우수·양호·개선·주의)입니다. 행을 누르면 해당 사업부의 결과 리포트로 이동합니다.</p>
   </div>
+
+  <div class="card mt home-brief"><h3>2026 전사 조직문화 브리핑 ${scope('all')}</h3>
+      <ol>${brief.map(x => `<li>${x}</li>`).join('')}</ol>
+      <p class="src">자동 생성 요약 · 점수집계표와 자유기술 분류 결과에서 계산한 사실만 사용합니다. 전년 자유기술 데이터가 없어 의견의 증감은 판단하지 않습니다.</p></div>
 
   ${insightTop3(co, 'improve', true)}
   <div class="grid g2 mt">
@@ -544,7 +548,7 @@ function insightTop3(o, key, home) {
     const gap = o.i !== 0 ? x.share - x.cshare : null;
     return `<div class="v-ins ${isGood ? 'good' : 'bad'}">
       <div class="v-ins-h"><span class="v-no">${i + 1}</span><span class="v-cat">${esc(catName(x.cat))}</span></div>
-      <h4>${esc(expTitle(x.label, key))}</h4>
+      <h4>${esc(expTitle(x.label, key))}</h4><p class="src">위 세부 의견 ${num(x.sm.n)}건 · 아래 숫자는 카테고리 전체 합계</p>
       <div class="v-num"><b>${num(x.n)}건</b><span>${isGood ? '긍정 응답' : '개선 의견'}의 ${pct(x.share)}</span>${gap == null || Math.abs(gap) < 0.005 ? '' : `<span class="${(gap > 0) === isGood ? 'better' : 'worse'}">전사 대비 ${gap > 0 ? '+' : ''}${(gap * 100).toFixed(0)}%p</span>`}</div>
       ${q ? `<blockquote class="v-q">${esc(q)}</blockquote>` : '<p class="muted" style="font-size:12.5px;margin:0">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
       <p class="v-act"><b>AI Insight</b> ${esc((isGood ? INS.keep : INS.improve)[x.cat] || '')}</p></div>`;
@@ -552,7 +556,7 @@ function insightTop3(o, key, home) {
   return `<div class="card mt"><h3>${title}</h3>
     <p class="v-lead"><b>${esc(catName(top[0].cat))}</b> 이야기가 가장 많습니다 — ${esc(expTitle(top[0].label, key))}</p>
     <div class="grid g3 v-ins-grid">${cards}</div>
-    <p class="src">건수는 주제(카테고리) 합계이고 문장 수입니다. 한 줄 해석은 분류 결과를 풀어쓴 문장이며, 인용문만 실제 응답입니다(호칭·조직 표현 비식별, 긴 문장은 핵심만 발췌).</p>
+    <p class="src">큰 숫자는 주제(카테고리) 합계이고, 세부 의견 건수는 별도로 표시합니다. 건수는 문장 수이며 작성자 수가 아닙니다. 한 줄 해석은 분류 결과를 풀어쓴 문장이며, 인용문만 실제 응답입니다(호칭·조직 표현 비식별, 긴 문장은 핵심만 발췌).</p>
     ${home ? `<div class="v-more"><span class="click" data-org="0" data-go="report" data-tabset="report:bad">노력해야 할 점 전체 분석 →</span></div>` : ''}</div>`;
 }
 
@@ -575,7 +579,7 @@ function kpwCard(o) {
       ${col('prob', '⚠️', 'Problem', '현재 가장 불편한 것', top(im, v => v.sent === '부정' || v.sent === '혼합', 'improve'))}
       ${col('want', '💡', 'Want', '구성원이 원하는 변화', wantHtml)}
     </div>
-    <p class="src">Keep은 '잘하고 있는 점' 문항의 긍정 응답, Problem은 '노력해야 할 점' 문항의 부정·혼합 응답, Want는 두 문항의 '개선 요청' 응답에서 많이 나온 순서입니다. 문장 수 기준이며 작성자 수가 아닙니다.</p></div>`;
+    <p class="src">Keep은 '잘하고 있는 점' 문항의 긍정 응답, Problem은 '노력해야 할 점' 문항의 부정·혼합 응답, Want는 두 문항의 '개선 요청' 응답에서 많이 나온 순서입니다. 문장 수 기준이며 작성자 수가 아닙니다. Problem과 Want는 중복될 수 있어 합산하지 않습니다.</p></div>`;
 }
 
 function voiceSpot(o, key) {
@@ -612,7 +616,7 @@ function rawTable(o, key) {
       <input class="input" data-f="text:k" placeholder="키워드 검색 (원문·요약)" value="${esc(f.k)}" style="flex:1;min-width:160px">
     </div>
     ${table(['조직', '원문', '요약', '주제', '감정', '유형', '분류 출처', ''], rows.slice(p * per, p * per + per).map(ti => { const t = T[ti], c = clsFast(ti);
-      const main = `<tr><td style="white-space:nowrap">${esc(O[t[0]].name)}</td><td class="raw">${highlight(t[3], kw)}</td><td class="sum">${esc(c[3])}</td><td style="white-space:nowrap">${catName(c[0])}</td><td>${c[2] === '의견 없음' ? '<span class="muted">-</span>' : sentTag(c[1])}</td><td style="white-space:nowrap">${esc(c[2])}</td><td>${srcTag(c[4])}</td><td><button class="btn sm" data-edit="${ti}">수정</button></td></tr>`;
+      const main = `<tr><td style="white-space:nowrap">${esc(O[t[0]].name)}</td><td class="raw">${highlight(deid(t[3]), kw)}</td><td class="sum">${esc(c[3])}</td><td style="white-space:nowrap">${catName(c[0])}</td><td>${c[2] === '의견 없음' ? '<span class="muted">-</span>' : sentTag(c[1])}</td><td style="white-space:nowrap">${esc(c[2])}</td><td>${srcTag(c[4])}</td><td><button class="btn sm" data-edit="${ti}">수정</button></td></tr>`;
       return main + (state.edit === ti ? editRow(ti, c) : ''); }))}
     ${pager('text', rows.length, p, pages, per)}
     <p class="src">오분류는 '수정'으로 고치고 사유를 남길 수 있습니다. 수정 결과는 이 PC에 저장되며, 데이터 관리/설정 > 데이터 현황에서 내보내 다음 데이터 갱신에 반영할 수 있습니다.</p></div>`;
@@ -640,6 +644,15 @@ function editRow(ti, c) {
 const REV_STATUS = ['미확인', '검토 중', '확인 완료', '해당 없음'];
 const rkey = ti => O[T[ti][0]].code + '|' + T[ti][3];
 
+function signalMatches(ti, f, rev) {
+ const t=T[ti],c=clsFast(ti);
+ return t[4]>0 && (!f.l||t[4]===+f.l) && (!f.c||c[0]===f.c) && (!f.st||(rev[rkey(ti)]?.status||'미확인')===f.st);
+}
+function signalOrgRows(o,f,rev) {
+ const stat={};
+ textsIn(o.i).filter(ti=>ok(O[T[ti][0]])&&signalMatches(ti,f,rev)).forEach(ti=>{const t=T[ti],v=stat[t[0]]||(stat[t[0]]=[0,0]);v[t[4]===2?0:1]++;});
+ return Object.entries(stat).map(([i,[h,m]])=>{const x=O[i],n=ownTexts(x.i).length;return {x,h,m,n,rate:n?(h+m)/n*100:0};}).sort((a,b)=>(b.n>=20)-(a.n>=20)||b.h-a.h||b.rate-a.rate);
+}
 function viewSignal() {
   const o = O[state.org];
   const head = pageHead('조직문화 저해 사례', `${esc(o.name)} ${scope('sub')} · 자유기술 중 조직문화 저해 가능성을 확인해야 하는 응답의 검토 우선순위`,
@@ -652,10 +665,7 @@ function viewSignal() {
   const stOf = ti => rev[rkey(ti)]?.status || '미확인';
   const rows = vis.filter(ti => { const t = T[ti], c = clsFast(ti); return (!f.l || t[4] === +f.l) && (!f.c || c[0] === f.c) && (!f.st || stOf(ti) === f.st); })
     .sort((x, y) => T[y][4] - T[x][4] || T[y][6] - T[x][6] || T[x][0] - T[y][0]);
-  const orgStat = {};
-  all.forEach(ti => { const k = T[ti][0]; const s = orgStat[k] || (orgStat[k] = [0, 0]); s[T[ti][4] === 2 ? 0 : 1]++; });
-  const cmpRows = Object.entries(orgStat).map(([i, [h, m]]) => { const x = O[i], n = ownTexts(x.i).length; return { x, h, m, n, rate: n ? (h + m) / n * 100 : 0 }; })
-    .filter(r => ok(r.x)).sort((p, q) => (q.n >= 20) - (p.n >= 20) || q.h - p.h || q.rate - p.rate).slice(0, 10);
+  const cmpRows = signalOrgRows(o,f,rev).slice(0,10);
   const hi = vis.filter(ti => T[ti][4] === 2).length;
   const done = vis.filter(ti => ['확인 완료', '해당 없음'].includes(stOf(ti))).length;
   const pg = state.page.sig || 0, per = 20, pages = Math.max(1, Math.ceil(rows.length / per)), p = Math.min(pg, pages - 1);
@@ -671,15 +681,15 @@ function viewSignal() {
   <div class="card mt"><h3>검토 목록</h3>
     <div class="filters">${selectBox('sig', 'l', '전체 우선순위', [[2, SIG[2]], [1, SIG[1]]])}${selectBox('sig', 'c', '전체 주제', CATS.map(c => [c, catName(c)]))}${selectBox('sig', 'st', '전체 검토 상태', REV_STATUS.map(s => [s, s]))}</div>
     ${table(['우선순위', '감정 강도', '조직', '원문', '판정 이유', '검토 상태', ''], rows.slice(p * per, p * per + per).map(ti => { const t = T[ti], c = clsFast(ti), r = rev[rkey(ti)];
-      const main = `<tr><td>${sigTag(t[4])}</td><td>${intenTag(t[6])}</td><td style="white-space:nowrap">${esc(O[t[0]].name)}<div class="muted" style="font-size:12px">${D.qtypes[t[1]]}</div></td><td class="raw">${highlight(t[3], t[5])}<div class="muted" style="font-size:12px;margin-top:2px">요약: ${esc(c[3])}</div></td><td class="why" style="font-size:12px">${esc(t[7] || '-')}<div style="margin-top:4px">${srcTag(c[4])}</div></td><td style="white-space:nowrap">${tag(r?.status || '미확인', r?.status === '확인 완료' ? 'pos' : r?.status === '검토 중' ? 'acc' : '')}${r ? `<div class="muted" style="font-size:12px;margin-top:2px">${esc(r.owner || '')}${r.owner ? ' · ' : ''}${esc(r.at)}</div>` : ''}</td><td><button class="btn sm" data-review="${ti}">기록</button></td></tr>`;
+      const main = `<tr><td>${sigTag(t[4])}</td><td>${intenTag(t[6])}</td><td style="white-space:nowrap">${esc(O[t[0]].name)}<div class="muted" style="font-size:12px">${D.qtypes[t[1]]}</div></td><td class="raw">${highlight(deid(t[3]), t[5])}<div class="muted" style="font-size:12px;margin-top:2px">요약: ${esc(c[3])}</div></td><td class="why" style="font-size:12px">${esc(t[7] || '-')}<div style="margin-top:4px">${srcTag(c[4])}</div></td><td style="white-space:nowrap">${tag(r?.status || '미확인', r?.status === '확인 완료' ? 'pos' : r?.status === '검토 중' ? 'acc' : '')}${r ? `<div class="muted" style="font-size:12px;margin-top:2px">${esc(r.owner || '')}${r.owner ? ' · ' : ''}${esc(r.at)}</div>` : ''}</td><td><button class="btn sm" data-review="${ti}">기록</button></td></tr>`;
       return main + (state.review === ti ? reviewRow(ti, r) : ''); }))}
     ${pager('sig', rows.length, p, pages, per)}
     <p class="src">검토 기록(상태·담당자·판정 이유·변경 이력)은 현재 이 PC 브라우저에 저장됩니다. 여러 담당자가 함께 관리하려면 서버 저장소 연동이 필요하며, 그 전까지는 'CSV'로 내보내 공유하세요.</p>
   </div>
   <div class="grid g2 mt">
-    <div class="card"><h3>조직별 신호 규모 ${scope('sub')} <small>해당 조직 직접 응답 기준</small></h3>
+    <div class="card"><h3>조직별 신호 규모 ${scope('sub')} <small>현재 필터 · 직접 응답 · 상위 10개</small></h3>
       ${table(['조직', '우선(건)', '전체(건)', '자유기술(건)', '100건당', '응답인원(명)'], cmpRows.map(r => `<tr class="click" data-org="${r.x.i}"><td>${orgLabel(r.x)}</td><td class="num">${r.h}</td><td class="num">${r.h + r.m}</td><td class="num">${num(r.n)}</td><td class="num">${r.n >= 20 ? f1(r.rate) : '<span class="muted">표본 적음</span>'}</td><td class="num">${num(r.x.resp)}</td></tr>`))}
-      <p class="src">큰 조직이 건수만으로 불리하게 보이지 않도록 자유기술 100건당 신호 수를 함께 표시합니다. 자유기술 20건 미만 조직은 비율을 산출하지 않습니다.</p></div>
+      <p class="src">Excel에는 화면의 10개 제한 없이 전체 조직이 포함됩니다. 큰 조직이 건수만으로 불리하게 보이지 않도록 자유기술 100건당 신호 수를 함께 표시합니다. 자유기술 20건 미만 조직은 비율을 산출하지 않습니다.</p></div>
     <div class="card"><h3>판정 기준</h3><div class="sub" style="font-size:13px">
       <p style="margin:0 0 6px"><b>우선 검토</b> · 괴롭힘·폭언·차별·갑질 등 인권·윤리 침해 가능성이 있는 표현이 긍정이 아닌 응답에 포함된 경우 (고발성 키워드 또는 LLM 판정)</p>
       <p style="margin:0 0 6px"><b>일반 검토</b> · '상호존중·업무 태도', '의견 개진·조직 유연성' 주제의 부정 응답 중 무례·태만·의견 무시 등 태도 서술</p>
@@ -1510,22 +1520,21 @@ function xlsx(sheets) {
 function downloadBlob(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
 
 function exportSignalXlsx() {
+  if (!ok(O[state.org])) return;
   const o = O[state.org], f = state.f.sig || { l: '', c: '', st: '' }, rev = store.get('review', {});
   const all = textsIn(o.i).filter(ti => T[ti][4] > 0), vis = all.filter(ti => rawOk(O[T[ti][0]]));
   const stOf = ti => rev[rkey(ti)]?.status || '미확인';
   const rows = vis.filter(ti => { const t = T[ti], c = clsFast(ti); return (!f.l || t[4] === +f.l) && (!f.c || c[0] === f.c) && (!f.st || stOf(ti) === f.st); })
     .sort((x, y) => T[y][4] - T[x][4] || T[y][6] - T[x][6] || T[x][0] - T[y][0]);
-  const s1 = [['우선순위', '감정 강도', '조직', '조직 단위', '부서장', '상위 조직', '문항', '원문', '요약', '주제', '감정', '판정 이유', '검토 상태', '담당자', '검토 일시']];
+  const s1 = [['우선순위', '감정 강도', '조직', '조직 단위', '부서장', '상위 조직', '문항', '원문(호칭·조직 표현 비식별)', '요약', '주제', '감정', '판정 이유', '검토 상태', '담당자', '검토 일시']];
   rows.forEach(ti => { const t = T[ti], c = clsFast(ti), r = rev[rkey(ti)], x = O[t[0]];
-    s1.push([SIG[t[4]], ['', '약', '중', '강'][t[6]] || '', x.name, LV[x.level], x.leader, x.parent >= 0 ? O[x.parent].name : '', D.qtypes[t[1]], t[3], c[3], catName(c[0]), c[1], t[7] || '', stOf(ti), r?.owner || '', r?.at || '']); });
-  const stat = {}; all.forEach(ti => { const k = T[ti][0], e = stat[k] || (stat[k] = [0, 0]); e[T[ti][4] === 2 ? 0 : 1]++; });
+    s1.push([SIG[t[4]], ['', '약', '중', '강'][t[6]] || '', x.name, LV[x.level], x.leader, x.parent >= 0 ? O[x.parent].name : '', D.qtypes[t[1]], deid(t[3]), c[3], catName(c[0]), c[1], t[7] || '', stOf(ti), r?.owner || '', r?.at || '']); });
   const s2 = [['조직', '조직 단위', '부서장', '상위 조직', '우선 검토(건)', '일반 검토(건)', '전체(건)', '자유기술(건)', '자유기술 100건당', '응답인원(명)']];
-  Object.entries(stat).map(([i, [h, m]]) => { const x = O[i], n = ownTexts(x.i).length; return { x, h, m, n, rate: n ? (h + m) / n * 100 : 0 }; })
-    .filter(r => ok(r.x)).sort((p, q) => q.h - p.h || (q.h + q.m) - (p.h + p.m))
-    .forEach(r => s2.push([r.x.name, LV[r.x.level], r.x.leader, r.x.parent >= 0 ? O[r.x.parent].name : '', r.h, r.m, r.h + r.m, r.n, r.n >= 20 ? +r.rate.toFixed(1) : '', r.x.resp]));
+  signalOrgRows(o,f,rev).forEach(r=>s2.push([r.x.name,LV[r.x.level],r.x.leader,r.x.parent>=0?O[r.x.parent].name:'',r.h,r.m,r.h+r.m,r.n,r.n>=20?+r.rate.toFixed(1):'표본 적음',r.x.resp]));
   downloadBlob(`조직문화저해사례_${o.name}_${now().slice(0, 10)}.xlsx`, xlsx([
     { name: '검토 목록', rows: s1, widths: [10, 8, 22, 8, 14, 22, 18, 70, 28, 16, 8, 40, 10, 12, 16], wrap: [7, 11] },
     { name: '조직별 신호 규모', rows: s2, widths: [26, 8, 14, 24, 12, 12, 10, 12, 14, 12] },
+    { name: '집계 기준', rows: [['항목','내용'],['조직 범위',o.name+' 및 예하조직'],['우선순위',SIG[f.l]||'전체'],['주제',f.c?catName(f.c):'전체'],['검토 상태',f.st||'전체'],['검토목록 건수',s1.length-1],['조직 수',s2.length-1],['최소 집계 응답인원',settings.minN],['원문 공개 최소 응답인원',settings.minRaw],['분모','해당 조직 직접 자유기술 문장 수. 20건 미만은 비율 비공개.'],['주의','확인 필요 신호이며 사실·법률 판단이 아님. HR/윤리/법무 검토 필요.'],['범위','페이지 제한 없이 필터에 해당하는 전체 목록. 원문 공개 기준과 집계 기준은 다름.'],['생성 일시',now()]], widths:[28,90],wrap:[1] },
   ]));
 }
 
