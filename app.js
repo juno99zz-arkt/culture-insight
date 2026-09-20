@@ -197,7 +197,7 @@ const state = { view: 'home', org: 0, tab: {}, f: {}, page: {}, chat: [], edit: 
 const bar = (label, v, max, opts = {}) => {
   const lo = opts.min ?? 0, w = Math.max(0, Math.min(100, (v - lo) / (max - lo) * 100));
   const mk = opts.mark != null ? `<span class="mark" style="left:${Math.max(0, Math.min(100, (opts.mark - lo) / (max - lo) * 100))}%"></span>` : '';
-  return `<div class="bar-row"><span class="nm" title="${esc(label)}">${esc(label)}</span><div class="bar"><i class="${opts.cls || ''}" style="width:${w}%"></i>${mk}</div><span class="val">${opts.val ?? f1(v)}</span></div>`;
+  return `<div class="bar-row"><span class="nm" title="${esc(label)}">${esc(label)}</span><div class="bar"><i class="${opts.cls || ''}" style="width:${w}%${opts.color ? `;background:${opts.color}` : ''}"></i>${mk}</div><span class="val">${opts.val ?? f1(v)}</span></div>`;
 };
 const donut = v => {
   const r = 26, c = 2 * Math.PI * r;
@@ -252,9 +252,9 @@ const taskKey = (o, c) => o.code + '|' + c;
 /* ---- 조직문화 건강 유형 (4분위: 점수 75점 × 전년 대비) ---- */
 const HEALTH_CUT = 75;
 const HEALTH = [
-  { key: '우수', desc: `${HEALTH_CUT}점 이상 · 전년 대비 유지/상승`, color: '#2f8f5b', bg: '#d4ebdd' },
-  { key: '양호', desc: `${HEALTH_CUT}점 이상 · 전년 대비 하락`, color: '#5b9a77', bg: '#eaf4ee' },
-  { key: '개선', desc: `${HEALTH_CUT}점 미만 · 전년 대비 유지/상승`, color: '#b08a1e', bg: '#fbf4dc' },
+  { key: '우수', desc: `${HEALTH_CUT}점 이상 · 전년 대비 유지/상승`, color: '#1f8a5c', bg: '#d3eee0' },
+  { key: '양호', desc: `${HEALTH_CUT}점 이상 · 전년 대비 하락`, color: '#3b6fd4', bg: '#dce7fb' },
+  { key: '개선', desc: `${HEALTH_CUT}점 미만 · 전년 대비 유지/상승`, color: '#c2861a', bg: '#fbf0d6' },
   { key: '주의', desc: `${HEALTH_CUT}점 미만 · 전년 대비 하락`, color: '#c0443e', bg: '#f4d3d1' },
 ];
 // 원점수 기준: 전년 대비 0 이상은 유지·상승. 비교 점수가 없으면 판정하지 않는다.
@@ -302,9 +302,6 @@ function viewHome() {
   const qStat = [0, 1, 2].map(() => ({ n: 0, none: 0 }));
   textsIn(0).forEach(ti => { const st = qStat[T[ti][1]]; st.n++; if (clsFast(ti)[2] === '의견 없음') st.none++; });
   const goodTop = themes(co, 'good').list.slice(0, 2);
-  const rev = store.get('review', {});
-  const sigTexts = T.map((t, ti) => [t, ti]).filter(([t]) => t[4] > 0);
-  const reviewed = sigTexts.filter(([t, ti]) => ['확인 완료', '해당 없음'].includes(rev[rkey(ti)]?.status)).length;
 
   // ② 전사 브리핑 (데이터에서 계산한 사실만)
   const lvName = LV[lv];
@@ -340,19 +337,6 @@ function viewHome() {
       <td class="hm-dist">${kids.length ? healthStack(kids, 8) + `<span class="muted">${lvName} ${kids.length}개 · ${HEALTH.map((h, i) => `${h.key} ${kc[i]}`).join(' · ')}</span>` : '<span class="muted">-</span>'}</td></tr>`;
   }).join('');
 
-  // ④ 주요 변화
-  const byChange = units.slice().sort((x, y) => (y.t[0] - y.t[1]) - (x.t[0] - x.t[1]));
-  const chRow = x => `<div class="list-item click" data-org="${x.i}" data-go="report"><div class="l"><div>${esc(x.name)}</div><div class="muted" style="font-size:12px">${esc(buOf(x)?.name || '')} · ${f1(x.t[1])} → ${f1(x.t[0])}</div></div><div>${dl(x.t[0] - x.t[1])}</div></div>`;
-
-  // ⑥ Risk: 주제별 신호
-  const catSig = {}; sigTexts.forEach(([t, ti]) => { const c = clsFast(ti)[0]; const e = catSig[c] || (catSig[c] = [0, 0]); e[t[4] === 2 ? 0 : 1]++; });
-  const kwCnt = {}; sigTexts.forEach(([t]) => (t[5] || '').split(',').filter(Boolean).forEach(k => { kwCnt[k] = (kwCnt[k] || 0) + 1; }));
-  const buSig = bus.map(x => [x, agg(x.i).hi]).filter(v => v[1]).sort((x, y) => y[1] - x[1]);
-
-  // ⑦ Action: 전사 HR 과제
-  const acts = proposals(co).slice(0, 3);
-  const Lhr = llmOn() ? store.get('llmProps', {})[llmPropKey(co, 'hr')] : null;
-
   const unitSel = `<select class="select sm-select" data-f="home:lv">${[4, 5, 6, 7].filter(l => O.some(x => x.level === l)).map(l => `<option value="${l}" ${lv === l ? 'selected' : ''}>${LV[l]} 기준</option>`).join('')}</select>`;
   return `
   <div class="page-head"><div><h2>2026 전사 조직문화 Overview</h2><p>우리 회사 조직문화에 지금 무슨 일이 일어나고 있는가 · 홈은 항상 전사 기준이며, 조직을 누르면 부서별 결과 리포트로 이동합니다.</p></div></div>
@@ -361,16 +345,18 @@ function viewHome() {
     <div class="card kpi"><div class="label">전사 SCI ${scope('all')}</div><div class="value">${f1(co.t[0])}<small>점</small></div><div class="foot muted">2026 진단 ${healthTag(healthOf(co.t[0], co.t[1]))}</div></div>
     <div class="card kpi"><div class="label">전년 대비</div><div class="value ${d1 >= 0 ? 'up' : 'down'}">${sg(d1)}<small>점</small></div><div class="foot muted">2025 ${f1(co.t[1])}점</div></div>
     <div class="card kpi"><div class="label">응답률</div><div class="value">${pct(co.rate)}</div><div class="foot muted">${num(co.resp)} / ${num(co.target)}명</div></div>
-    <div class="card kpi"><div class="label">자유기술</div><div class="value">${num(ca.n)}<small>건</small></div>
+    <div class="card kpi"><div class="label">자유기술</div><div class="value">${num(ca.n - ca.none)}<small>건</small></div>
       <div class="kpi-lines">${QSHORT.map((q, i) => `<div><span>${q}</span><b>${num(qStat[i].n - qStat[i].none)}건</b></div>`).join('')}
         <div class="src">의견 없음·무의미 응답 ${num(ca.none)}건 제외 · 문장 수</div></div></div>
   </div>
 
-  <div class="grid g-main mt">
+  <div class="grid g2 mt">
     <div class="card"><h3>영역별 건강유형 ${scope('all')} <small>2026 점수(전년 대비)</small></h3>
-      <div class="area-list">${co.area.map((v, k) => { const dv = v - co.areaPrev[k];
-        return `<div class="area-row"><span class="ar-name">${D.areas[k]}</span><span class="ar-val">${f1(v)}<small class="${dv >= 0 ? 'up' : 'down'}">(${sg(dv)})</small></span>${healthTag(healthOf(v, co.areaPrev[k]))}</div>`; }).join('')}</div>
-      <p class="src">${HEALTH.map(h => `${h.key} ${h.desc}`).join(' / ')}</p></div>
+      <div class="bars area-bars">${co.area.map((v, k) => { const dv = v - co.areaPrev[k];
+        const hl = healthOf(v, co.areaPrev[k]);
+        return bar(D.areas[k], v, 100, { min: 60, mark: co.areaPrev[k], color: hl ? hl.color : null,
+          val: `${f1(v)} <small class="${dv >= 0 ? 'up' : 'down'}">${sg(dv)}</small> ${healthTag(hl)}` }); }).join('')}</div>
+      <p class="src">막대 = 2026 점수(60~100점 구간) · 세로선 = 전년 점수 · 막대 색 = 건강 유형</p></div>
     <div class="card"><h3>전사 Trend <small>2024 → 2026</small></h3>${homeTrend}
       ${mismatch ? `<p class="src">참고: 영역 전년 점수 평균(${f1(areaPrevAvg)})과 전년 종합점수(${f1(co.t[1])})가 일치하지 않습니다. 원천 데이터 확인이 필요합니다.</p>` : ''}</div>
   </div>
@@ -387,24 +373,11 @@ function viewHome() {
       <ol>${brief.map(x => `<li>${x}</li>`).join('')}</ol>
       <p class="src">자동 생성 요약 · 점수집계표와 자유기술 분류 결과에서 계산한 사실만 사용합니다. 전년 자유기술 데이터가 없어 의견의 증감은 판단하지 않습니다.</p></div>
 
-  ${insightTop3(co, 'improve', true)}
-  <div class="grid g2 mt">
-    <div class="card"><h3>주요 변화 <small>${lvName} 기준 · 전년 대비</small></h3>
-      <div class="muted" style="font-size:12px">가장 개선된 조직</div><div class="list">${byChange.slice(0, 3).map(chRow).join('')}</div>
-      <div class="muted" style="font-size:12px;margin-top:10px">가장 하락한 조직</div><div class="list">${byChange.slice(-3).reverse().map(chRow).join('')}</div></div>
-    <div class="card click" data-go="signal"><h3>Risk Signal <small>확인 필요 신호</small></h3>
-      <div class="risk-kpi"><div><b style="color:var(--high)">${num(ca.hi)}</b><span>우선 검토</span></div><div><b style="color:var(--mid)">${num(ca.mid)}</b><span>일반 검토</span></div><div><b>${sigTexts.length ? pct(reviewed / sigTexts.length) : '-'}</b><span>검토 완료</span></div></div>
-      <div class="list" style="margin-top:8px">${Object.entries(catSig).sort((x, y) => (y[1][0] * 3 + y[1][1]) - (x[1][0] * 3 + x[1][1])).slice(0, 3).map(([c, [h, m]]) => `<div class="list-item"><span>${catName(c)}</span><span>${h ? tag('우선 ' + h, 'high') : ''} ${tag('일반 ' + m, 'mid')}</span></div>`).join('')}</div>
-      <div class="muted" style="font-size:12px;margin-top:8px">주요 표현: ${Object.entries(kwCnt).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, n]) => `‘${esc(k)}’ ${n}`).join(' · ') || '-'}</div>
-      ${buSig.length ? `<div class="muted" style="font-size:12px;margin-top:2px">우선 검토가 있는 사업부: ${buSig.map(([x, n]) => `${esc(x.name)} ${n}건`).join(', ')}</div>` : ''}
-      <p class="src">사실 판단 전 단계입니다. 누르면 조직문화 저해 사례로 이동합니다.</p></div>
-  </div>
-
-  <div class="card mt"><h3>이번 달 HR 검토 핵심과제 ${scope('all')} <small>전사 진단 점수·자유기술 기반 · 검토용 제안</small></h3>
-    <div class="grid g3">${acts.map((x, n) => { const lt = Lhr?.tasks?.[x.c]; return `<div class="action-card click" data-org="0" data-go="report" data-tabset="report:hr">
-      <div class="action-no">${n + 1}</div><h4>${esc(lt?.title || ACT[x.c].t)}</h4><p>${esc((lt && lt.hr) || ACT[x.c].hr)}</p>
-      <div class="chips">${tag(catName(x.c), 'acc')}${tag(`개선 의견 ${num(x.issue)}건`)}${x.dq.length ? tag(`관련 문항 최저 ${sg(x.worst)}`) : ''}</div></div>`; }).join('')}</div>
-    <p class="src">근거와 중장기 과제는 부서별 결과 리포트(전사) > HR 제언 탭에서 확인합니다.</p></div>`;
+  <div class="card mt home-more">
+    <div><b>세부 결과는 부서별 결과 리포트에서 확인하세요.</b>
+      <p class="muted">조직별 점수·항목·문항, 자유기술 분석(잘하고 있는 점 / 노력해야 할 점), 부서장 제언, HR 제언을 볼 수 있습니다. 왼쪽 조직 트리에서 조직을 선택해도 이동합니다.</p></div>
+    <button class="btn primary" data-org="0" data-go="report">부서별 결과 리포트 열기 →</button>
+  </div>`;
 }
 
 function viewReport() {
