@@ -825,14 +825,27 @@ function leadAnalysis(o) {
 }
 
 function leadProposals(o, r = leadAnalysis(o)) {
-  const total = Object.values(r.cat).reduce((acc, ca) => acc + ca.req + ca.N + ca.M, 0) || 1;
+  // 우선순위 = '부서장에게 하고 싶은 말' 요청·부정 + '노력해야 할 점' 개선 의견 + 관련 문항의 점수 격차
+  const b = bench(o), imp = themes(o, 'improve'), good = themes(o, 'good');
+  const byCat = t => Object.fromEntries(t.list.map(x => [x.cat, x]));
+  const impMap = byCat(imp), goodMap = byCat(good);
+  const totSay = Object.values(r.cat).reduce((acc, ca) => acc + ca.req + ca.N + ca.M, 0) || 1;
   return CATS.map(c => {
-    const ca = r.cat[c]; if (!ca) return null;
-    const issue = ca.req + ca.N + ca.M; if (!issue) return null;
+    const ca = r.cat[c] || { n: 0, P: 0, U: 0, N: 0, M: 0, H: 0, req: 0 };
+    const say = ca.req + ca.N + ca.M, im = impMap[c], gd = goodMap[c];
+    const impN = im ? im.n : 0, goodN = gd ? gd.n : 0;
+    const dq = DQ[c].map(k => ({ k, v: o.qs[k], gap: o.qs[k] - b.qs[k] }));
+    const worst = dq.length ? Math.min(...dq.map(x => x.gap)) : null;
+    const scoreLow = worst != null && worst <= -3;
+    if (!say && !impN && !scoreLow) return null;
     const sums = Object.entries(r.sum).filter(([, v]) => v.cat === c && leadIssue(v)).sort((x, y) => y[1].n - x[1].n).slice(0, 3);
     const attn = Object.values(r.attn).filter(g => g.cat === c).reduce((acc, g) => acc + g.n, 0);
-    return { c, issue, share: issue / total, sums, pos: ca.P, attn, dq: [], st: 'lead', kidsIss: [], ca };
-  }).filter(Boolean).sort((x, y) => y.issue - x.issue).slice(0, 5);
+    const voice = say + impN;
+    const st = !dq.length ? 'text' : scoreLow && voice ? 'both' : voice ? (worst >= 0 ? 'mixedHigh' : 'mixed') : 'scoreOnly';
+    return { c, issue: say, impN, impShare: im ? im.share : 0, impLabels: im ? im.labels.slice(0, 3) : [],
+      goodN, goodLabels: gd ? gd.labels.slice(0, 2) : [], voice, dq, worst, sums, pos: ca.P, attn, st, ca, kidsIss: [],
+      score: say / totSay * 100 + impN / (imp.tot || 1) * 70 + (worst != null ? Math.max(0, -worst) * 3 : 0) };
+  }).filter(Boolean).sort((x, y) => y.score - x.score).slice(0, 5);
 }
 
 function leadAnalysisCards(o, r) {
@@ -875,26 +888,69 @@ function leadAnalysisCards(o, r) {
 
 function leadEvidence(o, x, r, lt) {
   const li = (k, v) => `<li><span class="ev-k">${k}</span><div>${v}</div></li>`;
-  const exTi = x.sums.length ? r.sum[x.sums[0][0]].ex : null;
+  const exTi = x.sums.length ? r.sum[x.sums[0][0]].ex : null, b = bench(o);
+  const labels = arr => arr.map(([k, v]) => `'${esc(k)}'(${num(v.n)}건)`).join(', ');
   return `<div class="ev"><ul>
-    ${li('구성원 요청', `'${catName(x.c)}' 요청·개선 의견 ${num(x.issue)}건 (개선 요청 ${num(x.ca.req)}${x.ca.N ? ` · 부정 ${num(x.ca.N)}` : ''}${x.ca.M ? ` · 혼합 ${num(x.ca.M)}` : ''}) · 분석 대상 ${num(r.content)}건 중 ${pct(x.issue / (r.content || 1))}`)}
-    ${x.sums.length ? li('주요 내용', x.sums.map(([k, v]) => `'${esc(k)}'(${v.n}건)`).join(', ')) : ''}
+    ${li('부서장에게 하고 싶은 말', x.issue
+      ? `요청·부정 의견 ${num(x.issue)}건 (개선 요청 ${num(x.ca.req)}${x.ca.N ? ` · 부정 ${num(x.ca.N)}` : ''}${x.ca.M ? ` · 혼합 ${num(x.ca.M)}` : ''}) · 분석 대상 ${num(r.content)}건 중 ${pct(x.issue / (r.content || 1))}${x.sums.length ? `<br>주요 내용: ${labels(x.sums)}` : ''}`
+      : '이 주제의 요청·부정 의견은 없습니다.')}
+    ${li('노력해야 할 점', x.impN
+      ? `개선 의견 ${num(x.impN)}건 · 이 문항의 개선 의견 중 ${pct(x.impShare)}${x.impLabels.length ? `<br>주요 내용: ${labels(x.impLabels)}` : ''}`
+      : '이 주제의 개선 의견은 없습니다.')}
+    ${li('잘하고 있는 점', x.goodN
+      ? `같은 주제 긍정 의견 ${num(x.goodN)}건${x.goodLabels.length ? ` (${x.goodLabels.map(([k]) => `'${esc(k)}'`).join(', ')})` : ''} — 잘 되고 있는 부분은 유지하면서 요청을 반영하세요.`
+      : x.pos ? `'부서장에게 하고 싶은 말'의 감사·긍정 의견 ${num(x.pos)}건` : '같은 주제의 긍정 의견은 없습니다.')}
+    ${li('진단 점수', x.dq.length
+      ? `${x.dq.map(d => `"${esc(qShort(d.k))}" ${f1(d.v)}점(<span class="${d.gap >= 0 ? 'up' : 'down'}">${sg(d.gap)}</span>)`).join(', ')} · ${b.label} 대비 최저 ${sg(x.worst)}점`
+      : '이 주제를 직접 묻는 진단 문항이 없습니다.')}
     ${exTi != null ? li('원문 예시', `“${esc(T[exTi][3])}”`) : ''}
-    ${li('유지할 점', x.pos ? `같은 주제의 감사·긍정 의견 ${num(x.pos)}건 — 현재 잘하고 있는 부분은 유지하면서 요청을 반영할 수 있습니다.` : '같은 주제의 감사·긍정 의견은 없습니다.')}
     ${x.attn ? li('주의 깊게 볼 의견', `강조 표현 등이 포함된 의견 ${num(x.attn)}건`) : ''}
     ${lt?.why ? li('LLM 근거 해석', `${esc(lt.why)} <span class="muted">(LLM 작성 · 위 건수와 대조해 확인하세요)</span>`) : ''}
-    ${li('추가 확인', [lt?.check ? esc(lt.check) + ' <span class="muted">(LLM)</span>' : '', x.issue < 5 ? `요청이 ${x.issue}건으로 적어 대표성이 제한됨` : '', "'부서장에게 하고 싶은 말' 문항만 근거이며 진단 점수는 반영하지 않음 · 건수는 문장 수이며 작성자 수가 아님"].filter(Boolean).join('<br>'))}
+    ${li('추가 확인', [lt?.check ? esc(lt.check) + ' <span class="muted">(LLM)</span>' : '',
+      x.voice < 5 ? `관련 의견이 ${num(x.voice)}건으로 적어 대표성이 제한됨` : '',
+      '점수와 의견이 함께 관찰된 것이며 인과는 확인되지 않았습니다 · 건수는 문장 수이며 작성자 수가 아님'].filter(Boolean).join('<br>'))}
   </ul></div>`;
+}
+
+// 제언의 근거가 되는 점수·자유기술을 한 장으로 요약 (부서장 제언 탭 상단)
+function leadBasis(o, ps) {
+  const a = agg(o.i), g = gaps(o), b = bench(o), h = healthOf(o.t[0], o.t[1]);
+  const worstItems = ITEMS.map((it, k) => [it, g[k], o.items[k]]).sort((x, y) => x[1] - y[1]).slice(0, 3);
+  const areaLow = o.area.map((v, k) => [D.areas[k], v, v - o.areaPrev[k]]).sort((x, y) => x[1] - y[1])[0];
+  const qs = [['잘하고 있는 점', a.q[0]], ['노력해야 할 점', a.q[1]], ['부서장에게 하고 싶은 말', a.q[2]]];
+  return `<div class="card"><h3>제언 근거 요약 ${scope('org')} <small>점수와 자유기술 3개 문항을 함께 반영합니다</small></h3>
+    <div class="grid g4">
+      <div class="card kpi"><div class="label">SCI 종합점수</div><div class="value">${f1(o.t[0])}<small>점</small></div><div class="foot">${h ? healthTag(h) : '<span class="muted">비교 불가</span>'}</div></div>
+      <div class="card kpi"><div class="label">전년비</div><div class="value ${o.t[0] - o.t[1] >= 0 ? 'up' : 'down'}">${sg(o.t[0] - o.t[1])}<small>점</small></div><div class="foot muted">2025 ${f1(o.t[1])}점</div></div>
+      <div class="card kpi"><div class="label">전사 대비</div><div class="value ${o.i ? (o.t[0] - O[0].t[0] >= 0 ? 'up' : 'down') : ''}">${o.i ? sg(o.t[0] - O[0].t[0]) : '-'}${o.i ? '<small>점</small>' : ''}</div><div class="foot muted">${o.i ? `전사 ${f1(O[0].t[0])}점` : '전사 기준'}</div></div>
+      <div class="card kpi"><div class="label">자유기술</div><div class="value">${num(a.content)}<small>건</small></div>
+        <div class="kpi-lines">${qs.map(([nm, n]) => `<div><span>${nm}</span><b>${num(n)}건</b></div>`).join('')}</div></div>
+    </div>
+    <div class="ev mt"><ul>
+      <li><span class="ev-k">낮은 항목</span><div>${worstItems.map(([it, d, v]) => `${esc(it)} ${f1(v)}점(<span class="${d >= 0 ? 'up' : 'down'}">${sg(d)}</span>)`).join(', ')} <span class="muted">· ${b.label} 대비</span></div></li>
+      <li><span class="ev-k">가장 낮은 영역</span><div>${esc(areaLow[0])} ${f1(areaLow[1])}점 <span class="muted">(전년 대비 ${sgc(areaLow[2])})</span></div></li>
+      <li><span class="ev-k">우선순위</span><div>${ps.length ? ps.map((x, n) => `${n + 1}. ${catName(x.c)} <span class="muted">(하고 싶은 말 ${num(x.issue)}건 · 노력해야 할 점 ${num(x.impN)}건${x.dq.length ? ` · 문항 최저 ${sg(x.worst)}점` : ''})</span>`).join(' &nbsp;/&nbsp; ') : '근거가 충분한 주제가 없습니다.'}</div></li>
+    </ul></div>
+    <p class="src">우선순위 = '부서장에게 하고 싶은 말'의 요청·부정 건수 + '노력해야 할 점'의 개선 의견 + 해당 주제를 직접 묻는 문항의 ${b.label} 대비 격차. 건수는 문장 수이며 작성자 수가 아닙니다.</p>
+  </div>`;
 }
 
 function llmPropPrompt(o, ps, field) {
   if (field === 'lead') {
-    const r = leadAnalysis(o);
-    const lines = [`[조직] ${o.name}(${LV[o.level]}) · '부서장에게 하고 싶은 말' 문항 분석 대상 ${r.content}건(무의미 응답 ${r.none}건 제외, 문장 수) · 긍정 ${r.P} / 중립 ${r.U} / 부정 ${r.N}`,
-      '[근거 범위] 이 과제는 부서장에게 하고 싶은 말 응답만 근거로 한다. 진단 점수는 사용하지 않는다.', '[검토 대상 주제] (요청 건수 순)'];
+    const r = leadAnalysis(o), a = agg(o.i), b = bench(o);
+    const lines = [`[조직] ${o.name}(${LV[o.level]}) · 응답 ${o.resp}명(응답률 ${pct(o.rate)}) · ${caution(o) ? '표본·응답률 주의' : '응답 기준 충족'}`,
+      `[점수] 2026 ${f1(o.t[0])}점, 전년 대비 ${sg(o.t[0] - o.t[1])}${o.i ? `, 전사 대비 ${sg(o.t[0] - O[0].t[0])}` : ''}`,
+      `[낮은 항목(${b.label} 대비)] ${ITEMS.map((it, k) => [it, o.items[k] - b.items[k], o.items[k]]).sort((x, y) => x[1] - y[1]).slice(0, 3).map(([it, d, v]) => `${it} ${f1(v)}(${sg(d)})`).join(', ')}`,
+      `[자유기술] 잘하고 있는 점 ${a.q[0]}건 / 노력해야 할 점 ${a.q[1]}건 / 부서장에게 하고 싶은 말 ${a.q[2]}건(내용 있는 응답 ${r.content}건 · 긍정 ${r.P} / 중립 ${r.U} / 부정 ${r.N})`,
+      '[근거 범위] 점수와 자유기술 3개 문항을 함께 근거로 한다. 부서장이 직접 실행할 수 있는 행동만 쓰고, 제도·보상 변경 등 HR 소관 과제는 제외한다.',
+      '[검토 대상 주제] (우선순위 순)'];
     ps.forEach(x => {
-      lines.push(`- ${x.c} ${catName(x.c)} | 요청·개선 의견 ${x.issue}건(개선 요청 ${x.ca.req}, 부정 ${x.ca.N}, 혼합 ${x.ca.M}) · 같은 주제 감사·긍정 ${x.pos}건 · 강조 표현 의견 ${x.attn}건`);
-      lines.push(`  주요 내용: ${x.sums.map(([k, v]) => `'${k}'(${v.n})`).join(', ') || '없음'}`);
+      lines.push(`- ${x.c} ${catName(x.c)} | 결과 상태: ${STATE_TXT[x.st]}`);
+      lines.push(`  부서장에게 하고 싶은 말: 요청·부정 ${x.issue}건(개선 요청 ${x.ca.req}, 부정 ${x.ca.N}, 혼합 ${x.ca.M}) · 주요 내용: ${x.sums.map(([k, v]) => `'${k}'(${v.n})`).join(', ') || '없음'}`);
+      lines.push(`  노력해야 할 점: 개선 의견 ${x.impN}건 · 주요 내용: ${x.impLabels.map(([k, v]) => `'${k}'(${v.n})`).join(', ') || '없음'}`);
+      lines.push(`  잘하고 있는 점(유지할 부분): 긍정 ${x.goodN}건${x.goodLabels.length ? ` · ${x.goodLabels.map(([k]) => `'${k}'`).join(', ')}` : ''}`);
+      lines.push(`  직접 문항: ${x.dq.length ? x.dq.map(d => `"${Q[d.k]}" ${f1(d.v)}점(${b.label} 대비 ${sg(d.gap)})`).join('; ') : '없음(이 주제를 직접 묻는 문항 없음)'}`);
+      if (x.attn) lines.push(`  강조 표현 의견 ${x.attn}건`);
     });
     return lines.join('\n');
   }
@@ -958,21 +1014,23 @@ function propBody(o, field) {
     : `<div class="notice warn" style="justify-content:space-between"><div><b>LLM 작성 실패</b> ${esc(err)} · 기본 문안을 표시합니다.</div><button class="btn sm" data-act="regenProps">다시 시도</button></div>`;
   const intro = isHr
     ? '<b>HR 제언(검토용)</b> 진단 점수와 자유기술 전체를 근거로, HR이 지원할 내용과 중장기 조직·제도 과제를 제안합니다. 우선순위 = 주제별 개선 의견 비중 + 해당 이슈를 직접 묻는 문항의 점수 격차.'
-    : "<b>부서장 제언(검토용)</b> '부서장에게 하고 싶은 말' 문항의 요청·개선 의견을 근거로 부서장이 직접 실행할 과제를 제안합니다. 우선순위 = 주제별 요청·개선 의견 건수. 응답 자체의 분석은 '부서장에게 하고 싶은 말' 탭, 진단 점수 기반 과제는 'HR 제언' 탭에서 확인할 수 있습니다.";
+    : "<b>부서장 제언(검토용)</b> 진단 점수(항목·문항)와 자유기술 3개 문항(잘하고 있는 점 · 노력해야 할 점 · 부서장에게 하고 싶은 말)을 함께 근거로, 부서장이 직접 실행할 과제를 제안합니다. 우선순위 = 요청·부정 의견 + 개선 의견 + 관련 문항의 점수 격차. 문항별 응답 분석은 각 자유기술 탭에서, 제도·HR 차원의 과제는 'HR 제언' 탭에서 확인할 수 있습니다.";
   const cards = ps.length ? ps.map((x, n) => { const lt = L?.tasks?.[x.c]; return `
     <div class="prop"><div class="no">${n + 1}</div><div>
       <h4>${esc(lt?.title || ACT[x.c].t)}</h4>
       <p>${esc((lt && lt[field]) || ACT[x.c][field])}</p>
       ${isHr ? `<p class="muted" style="font-size:13px"><b>중장기</b> · ${esc((lt && lt.long) || ACT[x.c].long)}</p>` : ''}
-      <div class="chips">${tag(catName(x.c), 'acc')}${isHr ? tag(STATE_TXT[x.st], x.st === 'both' ? '' : 'mid') + tag('HR 지원') + tag('단기~중장기') : tag(`구성원 요청 ${num(x.issue)}건`) + tag('부서장 주도') + tag('단기(1~3개월)')}${lt ? tag('LLM 작성', 'llm') : tag('기본 문안')}</div>
+      <div class="chips">${tag(catName(x.c), 'acc')}${isHr ? tag(STATE_TXT[x.st], x.st === 'both' ? '' : 'mid') + tag('HR 지원') + tag('단기~중장기')
+        : tag(STATE_TXT[x.st], x.st === 'both' ? '' : 'mid') + (x.issue ? tag(`하고 싶은 말 ${num(x.issue)}건`) : '') + (x.impN ? tag(`노력해야 할 점 ${num(x.impN)}건`) : '') + (x.dq.length && x.worst <= -3 ? tag(`문항 ${sg(x.worst)}점`, 'mid') : '') + tag('부서장 주도') + tag('단기(1~3개월)')}${lt ? tag('LLM 작성', 'llm') : tag('기본 문안')}</div>
       ${isHr ? propEvidence(o, x, lt) : leadEvidence(o, x, r, lt)}
       ${isHr ? '' : trackForm(o, x, lt)}
-    </div></div>`; }).join('') : `<p class="muted">${isHr ? '근거가 충분한 개선 과제가 도출되지 않았습니다.' : "'부서장에게 하고 싶은 말'에 요청·개선 의견이 없어 도출된 제언이 없습니다."}</p>`;
+    </div></div>`; }).join('') : `<p class="muted">${isHr ? '근거가 충분한 개선 과제가 도출되지 않았습니다.' : '요청·개선 의견과 점수 격차가 모두 확인되지 않아 도출된 제언이 없습니다.'}</p>`;
   return `
   ${llmNote}
   <div class="notice info ${isHr ? '' : 'mt'}"><div>${intro} 원인은 검증이 필요한 가설이며, 실행 전 구성원과의 대화로 확인하시길 권장합니다.</div></div>
   ${caution(o) ? `<div class="notice warn"><b>표본·응답률 주의</b> 응답 ${o.resp}명 · 응답률 ${pct(o.rate)}</div>` : ''}
-  <div class="card"><h3>${isHr ? 'HR 제언' : '부서장 제언'} ${scope('sub')}</h3>${cards}</div>`;
+  ${isHr ? '' : leadBasis(o, ps)}
+  <div class="card ${isHr ? '' : 'mt'}"><h3>${isHr ? 'HR 제언' : '부서장 제언'} ${scope('sub')}</h3>${cards}</div>`;
 }
 
 /* ---- 결과 리포트 인쇄 (A4) ---- */
@@ -983,7 +1041,7 @@ const PRINT_DESC = {
   good: 'Top 3 Insight, 카테고리별 비중, Keep·Problem·Want, 주목할 목소리',
   bad: 'Top 3 Insight, 카테고리별 비중, Keep·Problem·Want, 주목할 목소리',
   say: "'부서장에게 하고 싶은 말' 응답 분석 (감정 비율·주제·공통 의견)",
-  lead: '부서장이 직접 실행할 과제 제언',
+  lead: '점수와 자유기술 3개 문항을 함께 본 부서장 실행 과제 제언',
   hr: '진단 점수·자유기술 기반 HR 지원·중장기 과제',
 };
 
