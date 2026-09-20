@@ -245,7 +245,7 @@ const VIEW_ALIAS = { text: ['report', 'good'], prop: ['report', 'lead'] };
 function setView(v) {
   if (VIEW_ALIAS[v]) { state.view = VIEW_ALIAS[v][0]; state.tab.report = VIEW_ALIAS[v][1]; } else state.view = v;
 }
-const REPORT_TABS = [['sum', '종합 요약'], ['q', '항목 · 문항'], ['good', '잘하고 있는 점'], ['bad', '노력해야 할 점'], ['lead', '부서장 제언'], ['hr', 'HR 제언']];
+const REPORT_TABS = [['sum', '종합 요약'], ['q', '항목 · 문항'], ['good', '잘하고 있는 점'], ['bad', '노력해야 할 점'], ['say', '부서장에게 하고 싶은 말'], ['lead', '부서장 제언'], ['hr', 'HR 제언']];
 const TASK_STATUS = ['미착수', '진행 중', '완료', '보류'];
 const taskKey = (o, c) => o.code + '|' + c;
 
@@ -389,7 +389,8 @@ function viewReport() {
   const acts = ok(o) ? `<button class="btn" data-act="print">인쇄 / PDF</button><button class="btn" data-act="csv">예하조직 CSV</button>${tb === 'lead' || tb === 'hr' ? '<button class="btn" data-act="exportTasks">과제 관리 CSV</button>' : ''}` : '';
   const head = pageHead(`${esc(o.name)} ${o.leader ? `<span class="lead-chip">부서장 ${esc(o.leader)}</span>` : ''} ${reliTag(o)}`, `${LV[o.level]} · 대상 ${num(o.target)}명 · 응답 ${num(o.resp)}명 · 2026 진단`, acts);
   if (!ok(o)) return head + limitCard(o);
-  const body = tb === 'q' ? questionsBody(o) : tb === 'good' ? voiceTab(o, 'good') : tb === 'bad' ? voiceTab(o, 'improve') : tb === 'lead' || tb === 'hr' ? propBody(o, tb) : summaryBody(o);
+  const body = tb === 'q' ? questionsBody(o) : tb === 'good' ? voiceTab(o, 'good') : tb === 'bad' ? voiceTab(o, 'improve')
+    : tb === 'say' ? leadSayBody(o) : tb === 'lead' || tb === 'hr' ? propBody(o, tb) : summaryBody(o);
   return head + tabs('report', REPORT_TABS) + body;
 }
 
@@ -922,6 +923,13 @@ async function genLLMProps(o, ps, field) {
   }
 }
 
+// 부서장에게 하고 싶은 말: 설문 응답 분석만 (제언은 '부서장 제언' 탭)
+function leadSayBody(o) {
+  const r = leadAnalysis(o);
+  return `<div class="notice info"><div><b>'부서장에게 하고 싶은 말' 문항 분석</b> 이 문항에 적힌 응답만 분류해 감정 비율·주제·많이 나온 의견을 정리했습니다. 이 결과를 바탕으로 한 실행 과제는 '부서장 제언' 탭에 있습니다.</div></div>
+  ${leadAnalysisCards(o, r)}`;
+}
+
 function propBody(o, field) {
   const isHr = field === 'hr';
   const r = isHr ? null : leadAnalysis(o);
@@ -935,7 +943,7 @@ function propBody(o, field) {
     : `<div class="notice warn" style="justify-content:space-between"><div><b>LLM 작성 실패</b> ${esc(err)} · 기본 문안을 표시합니다.</div><button class="btn sm" data-act="regenProps">다시 시도</button></div>`;
   const intro = isHr
     ? '<b>HR 제언(검토용)</b> 진단 점수와 자유기술 전체를 근거로, HR이 지원할 내용과 중장기 조직·제도 과제를 제안합니다. 우선순위 = 주제별 개선 의견 비중 + 해당 이슈를 직접 묻는 문항의 점수 격차.'
-    : "<b>부서장 제언(검토용)</b> '부서장에게 하고 싶은 말' 문항 응답만 분석해 도출했습니다. 우선순위 = 주제별 요청·개선 의견 건수. 진단 점수 기반 과제는 HR 제언 탭에서 확인할 수 있습니다.";
+    : "<b>부서장 제언(검토용)</b> '부서장에게 하고 싶은 말' 문항의 요청·개선 의견을 근거로 부서장이 직접 실행할 과제를 제안합니다. 우선순위 = 주제별 요청·개선 의견 건수. 응답 자체의 분석은 '부서장에게 하고 싶은 말' 탭, 진단 점수 기반 과제는 'HR 제언' 탭에서 확인할 수 있습니다.";
   const cards = ps.length ? ps.map((x, n) => { const lt = L?.tasks?.[x.c]; return `
     <div class="prop"><div class="no">${n + 1}</div><div>
       <h4>${esc(lt?.title || ACT[x.c].t)}</h4>
@@ -947,20 +955,20 @@ function propBody(o, field) {
     </div></div>`; }).join('') : `<p class="muted">${isHr ? '근거가 충분한 개선 과제가 도출되지 않았습니다.' : "'부서장에게 하고 싶은 말'에 요청·개선 의견이 없어 도출된 제언이 없습니다."}</p>`;
   return `
   ${llmNote}
-  ${isHr ? '' : leadAnalysisCards(o, r)}
   <div class="notice info ${isHr ? '' : 'mt'}"><div>${intro} 원인은 검증이 필요한 가설이며, 실행 전 구성원과의 대화로 확인하시길 권장합니다.</div></div>
   ${caution(o) ? `<div class="notice warn"><b>표본·응답률 주의</b> 응답 ${o.resp}명 · 응답률 ${pct(o.rate)}</div>` : ''}
   <div class="card"><h3>${isHr ? 'HR 제언' : '부서장 제언'} ${scope('sub')}</h3>${cards}</div>`;
 }
 
 /* ---- 결과 리포트 인쇄 (A4) ---- */
-const PRINT_SECS = { sum: '종합 요약', q: '항목 · 문항', good: '잘하고 있는 점', bad: '노력해야 할 점', lead: '부서장 제언', hr: 'HR 제언' };
+const PRINT_SECS = { sum: '종합 요약', q: '항목 · 문항', good: '잘하고 있는 점', bad: '노력해야 할 점', say: '부서장에게 하고 싶은 말', lead: '부서장 제언', hr: 'HR 제언' };
 const PRINT_DESC = {
   sum: '핵심 지표·건강 유형, 영역·항목 결과, 강점·약점, 예하조직 결과, 종합 브리핑',
   q: '12개 항목별 30개 문항 점수와 전사 대비 차이',
   good: 'Top 3 Insight, 카테고리별 비중, Keep·Problem·Want, 주목할 목소리',
   bad: 'Top 3 Insight, 카테고리별 비중, Keep·Problem·Want, 주목할 목소리',
-  lead: "'부서장에게 하고 싶은 말' 분석과 부서장 제언",
+  say: "'부서장에게 하고 싶은 말' 응답 분석 (감정 비율·주제·공통 의견)",
+  lead: '부서장이 직접 실행할 과제 제언',
   hr: '진단 점수·자유기술 기반 HR 지원·중장기 과제',
 };
 
@@ -989,6 +997,7 @@ function printReport(o, secs, cover) {
     q: () => questionsBody(o),
     good: () => voiceTab(o, 'good', true),
     bad: () => voiceTab(o, 'improve', true),
+    say: () => leadSayBody(o),
     lead: () => propBody(o, 'lead'),
     hr: () => propBody(o, 'hr'),
   };
