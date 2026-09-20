@@ -1069,13 +1069,28 @@ function lowIssues(o) {
   const lead = leadAnalysis(o), leadTop = Object.entries(lead.sum).filter(([, v]) => leadIssue(v)).sort((x, y) => y[1].n - x[1].n)[0];
   const trend = Math.abs(d1) < 0.05 ? '전년과 같은 수준입니다' : `전년 대비 ${Math.abs(d1).toFixed(1)}점 ${d1 > 0 ? '상승했습니다' : '하락했습니다'}`;
   const sentence = `종합 ${f1(o.t[0])}점으로 전사보다 ${Math.abs(dc).toFixed(1)}점 ${dc < 0 ? '낮고' : '높고'}, ${trend}.` +
-    (weak.length ? ` 특히 ${weak.slice(0, 2).map(([k]) => ITEMS[k]).join('·')} 항목이 낮습니다.` : '');
+    (weak.length ? ` 특히 ${weak.slice(0, 2).map(([k]) => ITEMS[k]).join('·')} 항목이 낮습니다.` : '') +
+    (a.hi ? ` HR 우선 확인이 필요한 응답이 ${a.hi}건 있습니다.` : '');
   const items = [];
   if (weak.length) items.push(['낮은 항목', weak.map(([k, v]) => `${ITEMS[k]} ${f1(o.items[k])}(${sg(v)})`).join(', ')]);
   if (areaDrop.length) items.push(['영역 하락', areaDrop.map(([k, v]) => `${D.areas[k]} ${sg(v)}`).join(', ')]);
   if (exps.length) items.push(['구성원 의견', exps.map(([l, v]) => `“${esc(expTitle(l, 'improve'))}”(${v.n}건)`).join(' · ')]);
   if (leadTop) items.push(['부서장에게 요청', `‘${esc(leadTop[0])}’(${leadTop[1].n}건)`]);
-  if (a.hi || a.mid) items.push(['확인 필요 신호', `우선 검토 ${a.hi}건 · 일반 검토 ${a.mid}건 (사실 판단 전)`]);
+  if (a.hi) {   // 우선 확인 신호는 어떤 내용인지까지 요약
+    const hiList = textsIn(o.i).filter(ti => T[ti][4] === 2);
+    const bySum = {}, byKw = {}, byOrg = {};
+    hiList.forEach(ti => { const c = clsFast(ti);
+      bySum[c[3]] = (bySum[c[3]] || 0) + 1;
+      byOrg[T[ti][0]] = (byOrg[T[ti][0]] || 0) + 1;
+      (T[ti][5] || '').split(',').filter(Boolean).forEach(k => { byKw[k] = (byKw[k] || 0) + 1; }); });
+    const top = Object.entries(bySum).sort((x, y) => y[1] - x[1]).slice(0, 3);
+    const kw = Object.entries(byKw).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k]) => `‘${esc(k)}’`).join(' · ');
+    const orgs = Object.entries(byOrg).filter(([i]) => +i !== o.i).sort((x, y) => y[1] - x[1]).slice(0, 2);
+    items.push(['우선 확인 신호', `${a.hi}건 — ${top.map(([l, n]) => `${esc(l)} ${n}건`).join(' · ')}` +
+      (kw ? ` · 주요 표현 ${kw}` : '') +
+      (orgs.length ? ` · 주로 ${orgs.map(([i, n]) => `${esc(O[i].name)} ${n}건`).join(', ')}` : '') + ' (사실 판단 전)']);
+    if (a.mid) items.push(['일반 검토 신호', `${a.mid}건`]);
+  } else if (a.mid) items.push(['확인 필요 신호', `일반 검토 ${a.mid}건 (사실 판단 전)`]);
   if (caution(o)) items.push(['해석 주의', `응답 ${o.resp}명 · 응답률 ${pct(o.rate)}`]);
   if (!im.n) items.push(['자료 부족', "'노력해야 할 점' 응답이 없어 구성원 의견 요약을 제공하지 않습니다."]);
   return { sentence, items };
