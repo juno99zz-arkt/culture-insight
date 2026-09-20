@@ -666,3 +666,22 @@ details.dist[open] .when-closed{display:none}
 .v-row .v-act{margin:auto 0 0}
 @media (max-width:900px){.v-row{grid-template-columns:1fr}.v-row .v-right{border-left:0;border-top:1px solid var(--line);padding:12px 0 0}}
 @media print{.v-row{break-inside:avoid}.v-row .v-num b{font-size:15px}}
+
+/* ---- 홈 브리핑 강조(최상단) ---- */
+.home-brief.top{background:linear-gradient(180deg,#f3f5ff,#fbfbff);border:1px solid #d6dcf8;margin-bottom:16px}
+.home-brief.top h3{color:var(--accent)}
+.home-brief.top ol{margin:6px 0 0}
+/* ---- Top 3 Insight: 주요 내용 ↔ 원문 매칭 ---- */
+.v-row{display:block}
+.v-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.v-head b{font-size:22px}
+.v-head .muted{font-size:12.5px}
+.v-pairs-h{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:18px;font-size:12px;color:var(--muted);font-weight:600;padding-bottom:4px}
+.v-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:18px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
+.v-pair .vp-l{display:flex;justify-content:space-between;gap:10px;font-size:14px;line-height:1.5}
+.v-pair .vp-l b{white-space:nowrap;color:var(--muted);font-weight:600;font-size:12.5px}
+.v-pair .v-q{margin:0;font-size:13.5px}
+.v-pair .vp-none{margin:0;font-size:12.5px}
+.v-pair.more{display:block;color:var(--muted);font-size:12.5px;padding:8px 0 0}
+@media (max-width:900px){.v-pairs-h{display:none}.v-pair{grid-template-columns:1fr;gap:8px}}
+@media print{.v-pair{break-inside:avoid}.v-head b{font-size:15px}}

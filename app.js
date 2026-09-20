@@ -341,6 +341,10 @@ function viewHome() {
   return `
   <div class="page-head"><div><h2>2026 전사 조직문화 Overview</h2><p>우리 회사 조직문화에 지금 무슨 일이 일어나고 있는가 · 홈은 항상 전사 기준이며, 조직을 누르면 부서별 결과 리포트로 이동합니다.</p></div></div>
 
+  <div class="card home-brief top"><h3>2026 전사 조직문화 브리핑 ${scope('all')}</h3>
+      <ol>${brief.map(x => `<li>${x}</li>`).join('')}</ol>
+      <p class="src">자동 생성 요약 · 점수집계표와 자유기술 분류 결과에서 계산한 사실만 사용합니다. 전년 자유기술 데이터가 없어 의견의 증감은 판단하지 않습니다.</p></div>
+
   <div class="grid g4 snap">
     <div class="card kpi"><div class="label">전사 SCI ${scope('all')}</div><div class="value">${f1(co.t[0])}<small>점</small></div><div class="foot muted">2026 진단 ${healthTag(healthOf(co.t[0], co.t[1]))}</div></div>
     <div class="card kpi"><div class="label">전년 대비</div><div class="value ${d1 >= 0 ? 'up' : 'down'}">${sg(d1)}<small>점</small></div><div class="foot muted">2025 ${f1(co.t[1])}점</div></div>
@@ -369,9 +373,7 @@ function viewHome() {
     <p class="src">SCI 색은 전사 대비 차이(초록: 높음 · 주황: 낮음), 분포 막대 색은 건강 유형(우수·양호·개선·주의)입니다. 행을 누르면 해당 사업부의 결과 리포트로 이동합니다.</p>
   </div>
 
-  <div class="card mt home-brief"><h3>2026 전사 조직문화 브리핑 ${scope('all')}</h3>
-      <ol>${brief.map(x => `<li>${x}</li>`).join('')}</ol>
-      <p class="src">자동 생성 요약 · 점수집계표와 자유기술 분류 결과에서 계산한 사실만 사용합니다. 전년 자유기술 데이터가 없어 의견의 증감은 판단하지 않습니다.</p></div>
+
 
   <div class="card mt home-more">
     <div><b>세부 결과는 부서별 결과 리포트에서 확인하세요.</b>
@@ -556,28 +558,19 @@ function insightCards(o, key) {
   if (!top.length) return '';
   const rows = top.map((x, i) => {
     const subs = x.labels.slice(0, 3);
-    // 대표 원문 2건: 서로 다른 세부 내용에서 한 건씩 우선
-    const quotes = [];
-    subs.forEach(([, v]) => {
-      if (quotes.length >= 2) return;
-      const q = (v.ex || []).map(([ti]) => voiceQuote(ti)).filter(t => t.length >= 25)
-        .sort((a, b) => (STRONG_RE.test(b) - STRONG_RE.test(a)) || b.length - a.length)[0];
-      if (q && !quotes.includes(q)) quotes.push(q);
-    });
     const gap = o.i !== 0 ? x.share - x.cshare : null;
+    const pick = v => (v.ex || []).map(([ti]) => voiceQuote(ti)).filter(t => t.length >= 25)
+      .sort((a, b) => (STRONG_RE.test(b) - STRONG_RE.test(a)) || b.length - a.length)[0] || '';
+    const used = new Set();
     return `<div class="v-row ${isGood ? 'good' : 'bad'}">
-      <div class="v-left">
-        <div class="v-ins-h"><span class="v-no">${i + 1}</span><span class="v-cat">${esc(catName(x.cat))}</span></div>
-        <div class="v-num"><b>${num(x.n)}건</b><span>${isGood ? '긍정 응답' : '개선 의견'} 중 비중 ${pct(x.share)}</span>${gap == null || Math.abs(gap) < 0.005 ? '' : `<span class="${(gap > 0) === isGood ? 'better' : 'worse'}">전사 대비 ${gap > 0 ? '+' : ''}${(gap * 100).toFixed(0)}%p</span>`}</div>
-        <div class="v-subs"><div class="v-subs-h">주요 내용</div>
-          ${subs.map(([l, v]) => `<div class="v-sub"><span>${esc(expTitle(l, key))}</span><b>${num(v.n)}건</b></div>`).join('')}
-          ${x.labels.length > subs.length ? `<div class="v-sub more">그 밖에 ${num(x.labels.length - subs.length)}개 세부 내용</div>` : ''}</div>
-      </div>
-      <div class="v-right">
-        ${quotes.length ? quotes.map(q => `<blockquote class="v-q">${esc(q)}</blockquote>`).join('')
-          : '<p class="muted" style="font-size:12.5px;margin:0">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
-        <p class="v-act"><b>AI Insight</b> ${esc((isGood ? INS.keep : INS.improve)[x.cat] || '')}</p>
-      </div></div>`;
+      <div class="v-head"><span class="v-no">${i + 1}</span><span class="v-cat">${esc(catName(x.cat))}</span>
+        <b>${num(x.n)}건</b><span class="muted">${isGood ? '긍정 응답' : '개선 의견'} 중 비중 ${pct(x.share)}</span>${gap == null || Math.abs(gap) < 0.005 ? '' : `<span class="${(gap > 0) === isGood ? 'better' : 'worse'}">전사 대비 ${gap > 0 ? '+' : ''}${(gap * 100).toFixed(0)}%p</span>`}</div>
+      <div class="v-pairs"><div class="v-pairs-h"><span>주요 내용</span><span>해당 원문</span></div>
+        ${subs.map(([l, v]) => { let q = pick(v); if (used.has(q)) q = ''; else if (q) used.add(q);
+          return `<div class="v-pair"><div class="vp-l"><span>${esc(expTitle(l, key))}</span><b>${num(v.n)}건</b></div>
+            ${q ? `<blockquote class="v-q">${esc(q)}</blockquote>` : '<p class="muted vp-none">원문 공개 기준(응답 ' + settings.minRaw + '명 이상)을 충족하는 응답이 없습니다.</p>'}</div>`; }).join('')}
+        ${x.labels.length > subs.length ? `<div class="v-pair more">그 밖에 ${num(x.labels.length - subs.length)}개 세부 내용</div>` : ''}</div>
+      <p class="v-act"><b>AI Insight</b> ${esc((isGood ? INS.keep : INS.improve)[x.cat] || '')}</p></div>`;
   }).join('');
   return `<div class="card mt"><h3>Top 3 Insight ${scope('sub')} <small>가장 많이 언급된 주제 3개 · 숫자 + 세부 내용 + 실제 목소리</small></h3>
     ${rows}
