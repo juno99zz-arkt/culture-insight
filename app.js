@@ -533,17 +533,6 @@ function insightTop3(o, key) {
   const th = themes(o, key), top = th.list.slice(0, 3), isGood = key === 'good';
   const title = `💬 구성원들은 지금 이렇게 말하고 있습니다 ${scope('sub')} <small>Top 3 Insight · 숫자 + 해석 + 실제 목소리</small>`;
   if (!top.length) return `<div class="card mt"><h3>${title}</h3><p class="muted">분석할 응답이 없습니다.</p></div>`;
-  const cards = top.map((x, i) => {
-    const cand = (x.sm.ex || []).map(([ti]) => voiceQuote(ti)).filter(t => t.length >= 25);
-    const q = cand.sort((a, b) => (STRONG_RE.test(b) - STRONG_RE.test(a)) || b.length - a.length)[0] || '';
-    const gap = o.i !== 0 ? x.share - x.cshare : null;
-    return `<div class="v-ins ${isGood ? 'good' : 'bad'}">
-      <div class="v-ins-h"><span class="v-no">${i + 1}</span><span class="v-cat">${esc(catName(x.cat))}</span></div>
-      <h4>${esc(expTitle(x.label, key))}</h4><p class="src">위 세부 의견 ${num(x.sm.n)}건 · 아래 숫자는 카테고리 전체 합계</p>
-      <div class="v-num"><b>${num(x.n)}건</b><span>${isGood ? '긍정 응답' : '개선 의견'}의 ${pct(x.share)}</span>${gap == null || Math.abs(gap) < 0.005 ? '' : `<span class="${(gap > 0) === isGood ? 'better' : 'worse'}">전사 대비 ${gap > 0 ? '+' : ''}${(gap * 100).toFixed(0)}%p</span>`}</div>
-      ${q ? `<blockquote class="v-q">${esc(q)}</blockquote>` : '<p class="muted" style="font-size:12.5px;margin:0">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
-      <p class="v-act"><b>AI Insight</b> ${esc((isGood ? INS.keep : INS.improve)[x.cat] || '')}</p></div>`;
-  }).join('');
   // 종합요약란: ① 많이 나온 주제와 내용 ② 그 밖에 눈에 띈 응답 ③ 반대 성격의 응답 건수
   const sum2 = th.list.slice(3, 6).filter(x => x.n >= 2);
   const revType = isGood ? '개선 요청' : '칭찬·인정';
@@ -558,8 +547,27 @@ function insightTop3(o, key) {
   ].filter(Boolean);
   return `<div class="card mt"><h3>${title}</h3>
     <div class="voice-sum">${lines.map(x => `<p>${x}</p>`).join('')}</div>
+    <p class="src">종합요약은 분류 결과를 풀어쓴 문장입니다. 건수·비중은 문장 수 기준이며 작성자 수가 아닙니다.</p></div>`;
+}
+
+// Top 3 Insight 카드 (카테고리별 비중 다음에 배치)
+function insightCards(o, key) {
+  const th = themes(o, key), top = th.list.slice(0, 3), isGood = key === 'good';
+  if (!top.length) return '';
+  const cards = top.map((x, i) => {
+    const cand = (x.sm.ex || []).map(([ti]) => voiceQuote(ti)).filter(t => t.length >= 25);
+    const q = cand.sort((a, b) => (STRONG_RE.test(b) - STRONG_RE.test(a)) || b.length - a.length)[0] || '';
+    const gap = o.i !== 0 ? x.share - x.cshare : null;
+    return `<div class="v-ins ${isGood ? 'good' : 'bad'}">
+      <div class="v-ins-h"><span class="v-no">${i + 1}</span><span class="v-cat">${esc(catName(x.cat))}</span></div>
+      <h4>${esc(expTitle(x.label, key))}</h4><p class="src">위 세부 의견 ${num(x.sm.n)}건 · 아래 숫자는 카테고리 전체 합계</p>
+      <div class="v-num"><b>${num(x.n)}건</b><span>${isGood ? '긍정 응답' : '개선 의견'}의 ${pct(x.share)}</span>${gap == null || Math.abs(gap) < 0.005 ? '' : `<span class="${(gap > 0) === isGood ? 'better' : 'worse'}">전사 대비 ${gap > 0 ? '+' : ''}${(gap * 100).toFixed(0)}%p</span>`}</div>
+      ${q ? `<blockquote class="v-q">${esc(q)}</blockquote>` : '<p class="muted" style="font-size:12.5px;margin:0">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
+      <p class="v-act"><b>AI Insight</b> ${esc((isGood ? INS.keep : INS.improve)[x.cat] || '')}</p></div>`;
+  }).join('');
+  return `<div class="card mt"><h3>Top 3 Insight ${scope('sub')} <small>가장 많이 언급된 주제 3개 · 숫자 + 해석 + 실제 목소리</small></h3>
     <div class="grid g3 v-ins-grid">${cards}</div>
-    <p class="src">종합요약과 한 줄 해석은 분류 결과를 풀어쓴 문장이고, 인용문만 실제 응답입니다(호칭·조직 표현 비식별, 긴 문장은 핵심만 발췌). 큰 숫자는 주제(카테고리) 합계이며 건수는 문장 수입니다.</p></div>`;
+    <p class="src">큰 숫자는 주제(카테고리) 합계이고, 세부 의견 건수는 별도로 표시합니다. 한 줄 해석은 분류 결과를 풀어쓴 문장이며, 인용문만 실제 응답입니다(호칭·조직 표현 비식별, 긴 문장은 핵심만 발췌).</p></div>`;
 }
 
 function catShare(o, key) {
@@ -573,22 +581,6 @@ function catShare(o, key) {
   return `<div class="card mt"><h3>카테고리별 비중 ${scope('sub')} <small>${isGood ? '긍정' : '부정·혼합·개선 요청'}으로 분류된 ${num(th.tot)}건 기준${o.i ? ' · 회색 글씨: 전사 비중' : ''}</small></h3>
     ${qBar}
     ${th.list.length ? `<div class="bars cat-bars">${th.list.map(x => bar(catName(x.cat), x.n, max, { cls: isGood ? 'pos' : 'neg', val: `${num(x.n)}건 · <b>${pct(x.share)}</b>${o.i ? ` <span class="muted">${pct(x.cshare)}</span>` : ''}` })).join('')}</div>` : '<p class="muted">분석할 응답이 없습니다.</p>'}</div>`;
-}
-
-function kpwCard(o) {
-  const g = segment(o, 'good'), im = segment(o, 'improve');
-  const top = (r, pick, key) => Object.entries(r.sum).filter(([, v]) => pick(v) && v.cat !== 'C0').sort((x, y) => y[1].n - x[1].n).slice(0, 3)
-    .map(([l, v]) => `<li><span>${esc(expTitle(l, key))}</span><b>${num(v.n)}건</b></li>`).join('');
-  const want = {}; [g, im].forEach(r => Object.entries(r.sum).forEach(([l, v]) => { if (v.type === '개선 요청' && v.cat !== 'C0') want[l] = (want[l] || 0) + v.n; }));
-  const wantHtml = Object.entries(want).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([l, n]) => `<li><span>${esc(expTitle(l, 'improve'))}</span><b>${num(n)}건</b></li>`).join('');
-  const col = (cls, icon, t, sub, body) => `<div class="kpw ${cls}"><div class="kpw-h">${icon} <b>${t}</b><small>${sub}</small></div><ul>${body || '<li class="muted">해당 응답이 없습니다.</li>'}</ul></div>`;
-  return `<div class="card mt"><h3>Keep · Problem · Want ${scope('sub')} <small>두 문항을 함께 봅니다</small></h3>
-    <div class="grid g3">
-      ${col('keep', '👍', 'Keep', '구성원이 유지하고 싶어 하는 것', top(g, v => v.sent === '긍정', 'good'))}
-      ${col('prob', '⚠️', 'Problem', '현재 가장 불편한 것', top(im, v => v.sent === '부정' || v.sent === '혼합', 'improve'))}
-      ${col('want', '💡', 'Want', '구성원이 원하는 변화', wantHtml)}
-    </div>
-    <p class="src">Keep은 '잘하고 있는 점' 문항의 긍정 응답, Problem은 '노력해야 할 점' 문항의 부정·혼합 응답, Want는 두 문항의 '개선 요청' 응답에서 많이 나온 순서입니다. 문장 수 기준이며 작성자 수가 아닙니다. Problem과 Want는 중복될 수 있어 합산하지 않습니다.</p></div>`;
 }
 
 function voiceSpot(o, key) {
@@ -633,7 +625,7 @@ function rawTable(o, key) {
 
 function voiceTab(o, key, print) {
   return `<p class="src" style="margin:0 0 12px">${esc(o.name)} ${scope('sub')} · '${D.qtypes[SEGS[key].q]}' 문항 분석 대상 ${num(segment(o, key).n)}건(의견 없음 제외, 문장 수) · 결론 → 근거 → 구성원 목소리 → 상세 데이터 순서입니다.</p>
-    ${insightTop3(o, key)}${catShare(o, key)}${kpwCard(o)}${voiceSpot(o, key)}${print ? '' : rawTable(o, key)}`;
+    ${insightTop3(o, key)}${catShare(o, key)}${insightCards(o, key)}${voiceSpot(o, key)}${print ? '' : rawTable(o, key)}`;
 }
 
 function editRow(ti, c) {
