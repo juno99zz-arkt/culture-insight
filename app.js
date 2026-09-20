@@ -86,7 +86,7 @@ function agg(i) {
   a.content = a.n - a.none;
   aggCache.set(i, a); return a;
 }
-const resetAgg = () => { aggCache.clear(); if (typeof segCache !== 'undefined') segCache.clear(); hasOvr = Object.keys(OVR).length > 0; };
+const resetAgg = () => { aggCache.clear(); if (typeof segCache !== 'undefined') segCache.clear(); if (typeof spotCache !== 'undefined') spotCache.clear(); hasOvr = Object.keys(OVR).length > 0; };
 const isIssue = s => s.sent === '부정' || s.sent === '혼합' || s.type === '개선 요청';
 function topSummaries(a, pred, n) {
   const all = [];
@@ -507,7 +507,7 @@ function themes(o, key) {
     return [m, tot || 1]; };
   const [m, tot] = roll(r), [cm, ctot] = roll(co);
   const list = Object.entries(m).sort((x, y) => y[1].n - x[1].n).map(([c, e]) => { e.labels.sort((x, y) => y[1].n - x[1].n);
-    return { cat: c, n: e.n, share: e.n / tot, cshare: cm[c] ? cm[c].n / ctot : 0, label: e.labels[0][0], sm: e.labels[0][1] }; });
+    return { cat: c, n: e.n, share: e.n / tot, cshare: cm[c] ? cm[c].n / ctot : 0, label: e.labels[0][0], sm: e.labels[0][1], labels: e.labels }; });
   return { r, list, tot };
 }
 
@@ -534,7 +534,7 @@ function insightTop3(o, key) {
   const title = `💬 구성원들은 지금 이렇게 말하고 있습니다 ${scope('sub')} <small>Top 3 Insight · 숫자 + 해석 + 실제 목소리</small>`;
   if (!top.length) return `<div class="card mt"><h3>${title}</h3><p class="muted">분석할 응답이 없습니다.</p></div>`;
   // 종합요약란: ① 많이 나온 주제와 내용 ② 그 밖에 눈에 띈 응답 ③ 반대 성격의 응답 건수
-  const sum2 = th.list.slice(3, 6).filter(x => x.n >= 2);
+  const spots = spotList(o, key);
   const revType = isGood ? '개선 요청' : '칭찬·인정';
   const revList = Object.entries(th.r.sum).filter(([, v]) => v.type === revType || (!isGood && v.sent === '긍정'))
     .sort((x, y) => y[1].n - x[1].n);
@@ -542,7 +542,7 @@ function insightTop3(o, key) {
   const lines = [
     `${top.map(x => `<b>${esc(catName(x.cat))}</b>(${pct(x.share)})`).join(', ')}에 대한 이야기가 가장 많습니다.
      구성원들은 ${top.map(x => esc(expTitle(x.label, key))).join(' · ')}.`,
-    sum2.length ? `그 밖에 ${sum2.map(x => `${esc(expTitle(x.label, key))}(${esc(catName(x.cat))} ${num(x.n)}건)`).join(' · ')} 응답도 있었습니다.` : '',
+    spots.length ? `아래 ‘주목해야 할 목소리’에서는 ${spots.map(x => `${esc(expTitle(x.c[3], key))}(${esc(catName(x.c[0]))} ${num(th.r.sum[x.c[3]]?.n || 1)}건)`).join(' · ')} 내용이 눈에 띕니다.` : '',
     revN ? `‘${D.qtypes[SEGS[key].q]}’ 문항이지만 ${isGood ? '추가로 개선되면 좋겠다는' : '긍정적으로 평가한'} 의견도 ${num(revN)}건 있었습니다${revList[0] ? ` (가장 많은 내용: ${esc(expTitle(revList[0][0], isGood ? 'improve' : 'good'))})` : ''}.` : '',
   ].filter(Boolean);
   return `<div class="card mt"><h3>${title}</h3>
@@ -550,24 +550,38 @@ function insightTop3(o, key) {
     <p class="src">종합요약은 분류 결과를 풀어쓴 문장입니다. 건수·비중은 문장 수 기준이며 작성자 수가 아닙니다.</p></div>`;
 }
 
-// Top 3 Insight 카드 (카테고리별 비중 다음에 배치)
+// Top 3 Insight (카테고리별 비중 다음) — 주제마다 한 행: 왼쪽 숫자·세부 내용 / 오른쪽 원문·AI Insight
 function insightCards(o, key) {
   const th = themes(o, key), top = th.list.slice(0, 3), isGood = key === 'good';
   if (!top.length) return '';
-  const cards = top.map((x, i) => {
-    const cand = (x.sm.ex || []).map(([ti]) => voiceQuote(ti)).filter(t => t.length >= 25);
-    const q = cand.sort((a, b) => (STRONG_RE.test(b) - STRONG_RE.test(a)) || b.length - a.length)[0] || '';
+  const rows = top.map((x, i) => {
+    const subs = x.labels.slice(0, 3);
+    // 대표 원문 2건: 서로 다른 세부 내용에서 한 건씩 우선
+    const quotes = [];
+    subs.forEach(([, v]) => {
+      if (quotes.length >= 2) return;
+      const q = (v.ex || []).map(([ti]) => voiceQuote(ti)).filter(t => t.length >= 25)
+        .sort((a, b) => (STRONG_RE.test(b) - STRONG_RE.test(a)) || b.length - a.length)[0];
+      if (q && !quotes.includes(q)) quotes.push(q);
+    });
     const gap = o.i !== 0 ? x.share - x.cshare : null;
-    return `<div class="v-ins ${isGood ? 'good' : 'bad'}">
-      <div class="v-ins-h"><span class="v-no">${i + 1}</span><span class="v-cat">${esc(catName(x.cat))}</span></div>
-      <h4>${esc(expTitle(x.label, key))}</h4><p class="src">위 세부 의견 ${num(x.sm.n)}건 · 아래 숫자는 카테고리 전체 합계</p>
-      <div class="v-num"><b>${num(x.n)}건</b><span>${isGood ? '긍정 응답' : '개선 의견'}의 ${pct(x.share)}</span>${gap == null || Math.abs(gap) < 0.005 ? '' : `<span class="${(gap > 0) === isGood ? 'better' : 'worse'}">전사 대비 ${gap > 0 ? '+' : ''}${(gap * 100).toFixed(0)}%p</span>`}</div>
-      ${q ? `<blockquote class="v-q">${esc(q)}</blockquote>` : '<p class="muted" style="font-size:12.5px;margin:0">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
-      <p class="v-act"><b>AI Insight</b> ${esc((isGood ? INS.keep : INS.improve)[x.cat] || '')}</p></div>`;
+    return `<div class="v-row ${isGood ? 'good' : 'bad'}">
+      <div class="v-left">
+        <div class="v-ins-h"><span class="v-no">${i + 1}</span><span class="v-cat">${esc(catName(x.cat))}</span></div>
+        <div class="v-num"><b>${num(x.n)}건</b><span>${isGood ? '긍정 응답' : '개선 의견'} 중 비중 ${pct(x.share)}</span>${gap == null || Math.abs(gap) < 0.005 ? '' : `<span class="${(gap > 0) === isGood ? 'better' : 'worse'}">전사 대비 ${gap > 0 ? '+' : ''}${(gap * 100).toFixed(0)}%p</span>`}</div>
+        <div class="v-subs"><div class="v-subs-h">주요 내용</div>
+          ${subs.map(([l, v]) => `<div class="v-sub"><span>${esc(expTitle(l, key))}</span><b>${num(v.n)}건</b></div>`).join('')}
+          ${x.labels.length > subs.length ? `<div class="v-sub more">그 밖에 ${num(x.labels.length - subs.length)}개 세부 내용</div>` : ''}</div>
+      </div>
+      <div class="v-right">
+        ${quotes.length ? quotes.map(q => `<blockquote class="v-q">${esc(q)}</blockquote>`).join('')
+          : '<p class="muted" style="font-size:12.5px;margin:0">원문 공개 기준을 충족하는 응답이 없습니다.</p>'}
+        <p class="v-act"><b>AI Insight</b> ${esc((isGood ? INS.keep : INS.improve)[x.cat] || '')}</p>
+      </div></div>`;
   }).join('');
-  return `<div class="card mt"><h3>Top 3 Insight ${scope('sub')} <small>가장 많이 언급된 주제 3개 · 숫자 + 해석 + 실제 목소리</small></h3>
-    <div class="grid g3 v-ins-grid">${cards}</div>
-    <p class="src">큰 숫자는 주제(카테고리) 합계이고, 세부 의견 건수는 별도로 표시합니다. 한 줄 해석은 분류 결과를 풀어쓴 문장이며, 인용문만 실제 응답입니다(호칭·조직 표현 비식별, 긴 문장은 핵심만 발췌).</p></div>`;
+  return `<div class="card mt"><h3>Top 3 Insight ${scope('sub')} <small>가장 많이 언급된 주제 3개 · 숫자 + 세부 내용 + 실제 목소리</small></h3>
+    ${rows}
+    <p class="src">큰 숫자는 주제(카테고리) 합계이고, 주요 내용의 괄호 숫자는 세부 내용별 건수입니다. 한 주제 안에도 여러 내용이 섞여 있으므로 한 문장으로 단정하지 말고 주요 내용과 원문을 함께 확인하세요. 해석 문장은 분류 결과를 풀어쓴 것이고, 인용문만 실제 응답입니다(호칭·조직 표현 비식별).</p></div>`;
 }
 
 function catShare(o, key) {
@@ -583,7 +597,11 @@ function catShare(o, key) {
     ${th.list.length ? `<div class="bars cat-bars">${th.list.map(x => bar(catName(x.cat), x.n, max, { cls: isGood ? 'pos' : 'neg', val: `${num(x.n)}건 · <b>${pct(x.share)}</b>${o.i ? ` <span class="muted">${pct(x.cshare)}</span>` : ''}` })).join('')}</div>` : '<p class="muted">분석할 응답이 없습니다.</p>'}</div>`;
 }
 
-function voiceSpot(o, key) {
+// 주목해야 할 목소리 선정 (종합요약란과 카드가 같은 응답을 쓰도록 공유)
+const spotCache = new Map();
+function spotList(o, key) {
+  const ck = o.i + '|' + key;
+  if (spotCache.has(ck)) return spotCache.get(ck);
   const isGood = key === 'good', r = segment(o, key), qn = SEGS[key].q, seen = new Set(), out = [];
   const list = textsIn(o.i).filter(ti => T[ti][1] === qn && rawOk(O[T[ti][0]])).map(ti => ({ ti, t: T[ti], c: clsFast(ti) }))
     .filter(x => x.c[2] !== '의견 없음' && x.c[0] !== 'C0' && (isGood ? x.c[1] === '긍정' : x.c[1] !== '긍정'));
@@ -591,6 +609,12 @@ function voiceSpot(o, key) {
   const score = x => isGood ? Math.min(x.q.length, 100) / 10 + (r.sum[x.c[3]]?.n || 0) / 50
     : x.t[4] * 10 + (STRONG_RE.test(x.q) ? 4 : 0) + (x.c[1] === '부정' ? 2 : 0) + Math.min(x.q.length, 100) / 50;
   list.filter(x => x.q.length >= 30).sort((a, b) => score(b) - score(a)).forEach(x => { if (out.length < 3 && !seen.has(x.c[3])) { seen.add(x.c[3]); out.push(x); } });
+  spotCache.set(ck, out);
+  return out;
+}
+
+function voiceSpot(o, key) {
+  const isGood = key === 'good', r = segment(o, key), out = spotList(o, key);
   return `<div class="card mt"><h3>주목해야 할 목소리 ${scope('sub')} <small>원문 + 해석</small></h3>
     ${out.length ? out.map(x => { const n = r.sum[x.c[3]]?.n || 1; return `<figure class="bigq ${isGood ? 'good' : 'bad'}"><blockquote>${esc(x.q)}</blockquote>
       <figcaption>${esc(O[x.t[0]].name)} · ${esc(catName(x.c[0]))}${x.t[4] ? ' · ' + SIG[x.t[4]] : ''}</figcaption>

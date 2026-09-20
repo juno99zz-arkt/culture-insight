@@ -650,3 +650,19 @@ details.dist[open] .when-closed{display:none}
 .qs-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-size:12.5px;color:var(--muted)}
 .qs-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .qs-legend b{color:var(--text)}
+
+/* ---- Top 3 Insight: 행 배치 ---- */
+.v-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:20px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.v-row:last-of-type{margin-bottom:0}
+.v-row .v-left{display:flex;flex-direction:column;gap:8px;min-width:0}
+.v-row .v-right{display:flex;flex-direction:column;gap:8px;min-width:0;border-left:1px solid var(--line);padding-left:18px}
+.v-row .v-num b{font-size:22px}
+.v-subs{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.v-subs-h{font-size:12px;color:var(--muted);font-weight:600}
+.v-sub{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;line-height:1.45}
+.v-sub b{white-space:nowrap;color:var(--muted);font-weight:600;font-size:12.5px}
+.v-sub.more{color:var(--muted);font-size:12.5px}
+.v-row .v-q{margin:0}
+.v-row .v-act{margin:auto 0 0}
+@media (max-width:900px){.v-row{grid-template-columns:1fr}.v-row .v-right{border-left:0;border-top:1px solid var(--line);padding:12px 0 0}}
+@media print{.v-row{break-inside:avoid}.v-row .v-num b{font-size:15px}}
