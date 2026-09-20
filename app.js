@@ -409,16 +409,17 @@ function summaryBody(o) {
   const idx = g.map((_, k) => k).sort((x, y) => g[y] - g[x]);
   return `
     ${caution(o) ? `<div class="notice warn"><b>표본·응답률 주의</b> 응답 ${o.resp}명, 응답률 ${pct(o.rate)}로 결과 해석에 주의가 필요합니다.</div>` : ''}
-    <div class="grid g4">
-      <div class="card kpi"><div class="label">SCI 종합점수 ${scope('org')}</div><div class="value">${f1(o.t[0])}<small>점</small></div><div class="foot">전년 대비 ${dl(o.t[0] - o.t[1])} ${healthTag(healthOf(o.t[0], o.t[1]))}</div><div class="src">2024 ${f1(o.t[2])} · 2025 ${f1(o.t[1])} · 2026 ${f1(o.t[0])}</div></div>
+    <div class="grid g5">
+      <div class="card kpi"><div class="label">SCI 종합점수 ${scope('org')}</div><div class="value">${f1(o.t[0])}<small>점</small></div><div class="foot">2026 진단 ${healthTag(healthOf(o.t[0], o.t[1]))}</div><div class="src">2024 ${f1(o.t[2])} · 2025 ${f1(o.t[1])} · 2026 ${f1(o.t[0])}</div></div>
       <div class="card kpi"><div class="label">응답률 ${scope('org')}</div><div class="donut">${donut(o.rate)}<div><div class="value" style="font-size:24px">${pct(o.rate)}</div><div class="foot muted">${num(o.resp)} / ${num(o.target)}명</div></div></div></div>
+      <div class="card kpi"><div class="label">전년비 ${scope('org')}</div><div class="value ${o.t[0] - o.t[1] >= 0 ? 'up' : 'down'}">${sg(o.t[0] - o.t[1])}<small>점</small></div><div class="foot muted">2025 ${f1(o.t[1])}점</div></div>
       <div class="card kpi"><div class="label">${o.i ? '전사 대비' : '2024 대비'} ${scope(o.i ? 'all' : 'org')}</div><div class="value">${o.i ? sg(o.t[0] - O[0].t[0]) : sg(o.t[0] - o.t[2])}<small>점</small></div><div class="foot muted">${o.i ? `전사 ${f1(O[0].t[0])}점` : `2024 ${f1(o.t[2])}점`}</div></div>
       <div class="card kpi"><div class="label">${LV[o.level]} 단위 순위 ${scope('all')}</div><div class="value">${rk.n > 1 ? rk.r : '-'}<small>/ ${rk.n}</small></div><div class="foot muted">${rk.n > 1 ? (rk.top <= 0.5 ? `상위 ${Math.max(1, Math.round(rk.top * 100))}%` : `하위 ${Math.max(1, Math.round((1 - rk.top) * 100 + 100 / rk.n))}%`) : '비교 대상 없음'}</div></div>
     </div>
     <p class="src">전년 비교 참고: 과거 연도의 응답 규모와 조직 개편 여부는 데이터에 없어 확인되지 않았습니다. 조직 구성이 달라졌다면 직접 비교에 주의하세요.</p>
     <div class="grid g-chart2 mt">
       <div class="card"><h3>영역 · 항목별 결과 ${scope('org')} <small>영역: 건강 유형 (점수, 전년 대비) · 항목 막대의 세로선: ${b.label} · 괄호: ${b.label} 대비</small></h3>
-        <div class="ai-grid">${o.area.map((_, k) => `<div class="ai-col">${areaBox(o, k, true)}
+        <div class="ai-grid fill">${o.area.map((_, k) => `<div class="ai-col">${areaBox(o, k, true)}
           <div class="bars">${ITEMS.map((_, j) => j).filter(j => D.items[j][1] === k).map(j => bar(ITEMS[j], o.items[j], 100, { min: 60, mark: b.items[j], cls: g[j] <= -3 ? 'neg' : '', val: `${f1(o.items[j])} <span class="${g[j] >= 0 ? 'up' : 'down'}">(${sg(g[j])})</span>` })).join('')}</div></div>`).join('')}</div>
         <p class="src">영역 건강 유형: ${HEALTH.map(h => `${h.key} ${h.desc}`).join(' / ')}. 막대가 빨간 항목은 ${b.label}보다 3점 이상 낮습니다.</p></div>
       <div class="card"><h3>강점 · 약점 <small>${b.label} 대비</small></h3>
@@ -446,11 +447,11 @@ function questionsBody(o) {
 function subTable(o) {
   const rows = o.kids.map(i => O[i]);
   if (!rows.length) return '<p class="muted">예하조직이 없습니다.</p>';
-  const lead = x => x.leader ? ` <span class="lead-sm">${esc(x.leader)}</span>` : '';
-  return table(['조직명 · 부서장', '응답인원(명)', '응답률', '종합점수', '전년 대비', '전사 대비', '최저 항목'], rows.map(x => {
-    if (!ok(x)) return `<tr><td>${orgLabel(x)}${lead(x)}</td><td class="num">${x.resp}</td><td colspan="5" class="muted">분석 제한 (응답 ${settings.minN}명 미만 · 비공개)</td></tr>`;
+  const lead = x => `<td class="lead-cell">${x.leader ? esc(x.leader) : '<span class="muted">-</span>'}</td>`;
+  return table(['조직명', '부서장', '응답인원(명)', '응답률', '종합점수', '전년 대비', '전사 대비', '최저 항목'], rows.map(x => {
+    if (!ok(x)) return `<tr><td>${orgLabel(x)}</td>${lead(x)}<td class="num">${x.resp}</td><td colspan="5" class="muted">분석 제한 (응답 ${settings.minN}명 미만 · 비공개)</td></tr>`;
     const g = gaps(x), wk = g.indexOf(Math.min(...g));
-    return `<tr class="click" data-org="${x.i}"><td>${orgLabel(x)}${lead(x)} ${caution(x) ? tag('표본·응답률 주의', 'mid') : ''}</td><td class="num">${num(x.resp)}</td><td class="num">${pct(x.rate)}</td><td class="num">${f1(x.t[0])}</td><td class="num">${dl(x.t[0] - x.t[1])}</td><td class="num">${sg(x.t[0] - O[0].t[0])}</td><td>${ITEMS[wk]} <span class="down">${sg(g[wk])}</span></td></tr>`;
+    return `<tr class="click" data-org="${x.i}"><td>${orgLabel(x)} ${caution(x) ? tag('표본·응답률 주의', 'mid') : ''}</td>${lead(x)}<td class="num">${num(x.resp)}</td><td class="num">${pct(x.rate)}</td><td class="num">${f1(x.t[0])}</td><td class="num">${dl(x.t[0] - x.t[1])}</td><td class="num">${sg(x.t[0] - O[0].t[0])}</td><td>${ITEMS[wk]} <span class="down">${sg(g[wk])}</span></td></tr>`;
   }));
 }
 

@@ -630,3 +630,11 @@ details.dist[open] .when-closed{display:none}
 .home-more b{font-size:16px}
 .home-more p{margin:4px 0 0;font-size:13px;line-height:1.5}
 .home-more .btn{white-space:nowrap}
+
+/* ---- 리포트 종합 요약: 영역·항목 카드 높이 채우기 · 부서장 열 ---- */
+.g-chart2>.card{display:flex;flex-direction:column}
+.ai-grid.fill{flex:1;align-content:stretch}
+.ai-grid.fill .ai-col{display:flex;flex-direction:column}
+.ai-grid.fill .ai-col .bars{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:6px}
+.lead-cell{white-space:nowrap;font-size:13px}
+@media print{.print-doc .g5{grid-template-columns:repeat(5,minmax(0,1fr))}}
